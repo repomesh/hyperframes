@@ -109,7 +109,6 @@ import { freemem } from "os";
 import { fileURLToPath } from "url";
 import { createFileServer, type FileServerHandle, VIRTUAL_TIME_SHIM } from "./fileServer.js";
 import {
-  compileForRender,
   resolveCompositionDurations,
   recompileWithResolutions,
   discoverMediaFromBrowser,
@@ -121,6 +120,7 @@ import {
   type HdrImageTransferCache,
   createHdrImageTransferCache,
 } from "./hdrImageTransferCache.js";
+import { runCompileStage } from "./render/stages/compileStage.js";
 
 /**
  * Wrap a cleanup operation so it never throws, but logs any failure.
@@ -2125,51 +2125,22 @@ export async function executeRenderJob(
     const stage1Start = Date.now();
     updateJobStatus(job, "preprocessing", "Compiling composition", 5, onProgress);
 
-    const compileStart = Date.now();
-    let compiled = await compileForRender(projectDir, htmlPath, join(workDir, "downloads"));
-    assertNotAborted();
-    perfStages.compileOnlyMs = Date.now() - compileStart;
-    applyRenderModeHints(cfg, compiled, log);
-    writeCompiledArtifacts(compiled, workDir, Boolean(job.config.debug));
-
-    log.info("Compiled composition metadata", {
+    const compileResult = await runCompileStage({
+      projectDir,
+      workDir,
+      htmlPath,
       entryFile,
-      staticDuration: compiled.staticDuration,
-      width: compiled.width,
-      height: compiled.height,
-      videoCount: compiled.videos.length,
-      audioCount: compiled.audios.length,
-      renderModeHints: compiled.renderModeHints,
+      job,
+      cfg,
+      needsAlpha,
+      log,
+      assertNotAborted,
     });
-
-    const composition: CompositionMetadata = {
-      duration: compiled.staticDuration,
-      videos: compiled.videos,
-      audios: compiled.audios,
-      images: compiled.images,
-      width: compiled.width,
-      height: compiled.height,
-    };
+    let compiled = compileResult.compiled;
+    const composition = compileResult.composition;
+    const { deviceScaleFactor, outputWidth, outputHeight } = compileResult;
     const { width, height } = composition;
-    const deviceScaleFactor = resolveDeviceScaleFactor({
-      compositionWidth: width,
-      compositionHeight: height,
-      outputResolution: job.config.outputResolution,
-      hdrRequested: job.config.hdrMode === "force-hdr",
-      alphaRequested: needsAlpha,
-    });
-    const outputWidth = width * deviceScaleFactor;
-    const outputHeight = height * deviceScaleFactor;
-    if (deviceScaleFactor > 1) {
-      log.info("Supersampling composition via deviceScaleFactor", {
-        compositionWidth: width,
-        compositionHeight: height,
-        outputResolution: job.config.outputResolution,
-        outputWidth,
-        outputHeight,
-        deviceScaleFactor,
-      });
-    }
+    perfStages.compileOnlyMs = compileResult.compileOnlyMs;
 
     const probeStart = Date.now();
     const needsBrowser = composition.duration <= 0 || compiled.unresolvedCompositions.length > 0;
