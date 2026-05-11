@@ -41,6 +41,16 @@ describe("computePlanHash", () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  // Pin the schema-prefix-mixed-in result for one fixed input. If the
+  // framing of `computePlanHash` ever changes silently, this test must
+  // be updated (which means bumping `PLAN_HASH_SCHEMA_PREFIX` in the
+  // source too). Catches accidental drift across producer versions.
+  it("matches the known digest for a fixed reference input", () => {
+    expect(computePlanHash(makeInput())).toBe(
+      "995b4105a1a629965e85dc5d92c6aab9b888e39acdb14369d1bc781aa3247a94",
+    );
+  });
+
   it("ignores asset order in the input array", () => {
     const ordered = computePlanHash(
       makeInput({
@@ -204,6 +214,10 @@ describe("canonicalJsonStringify", () => {
   it("rejects unsupported value types", () => {
     expect(() => canonicalJsonStringify(() => 1)).toThrow(TypeError);
     expect(() => canonicalJsonStringify(Symbol("s"))).toThrow(TypeError);
+  });
+
+  it("rejects undefined at the top level", () => {
+    expect(() => canonicalJsonStringify(undefined)).toThrow(TypeError);
   });
 
   it("produces equal output for semantically equal objects with different key order", () => {

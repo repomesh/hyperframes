@@ -4,7 +4,8 @@
  * See DISTRIBUTED-RENDERING-PLAN.md §4.2 for the contract:
  *
  *   planHash = sha256(
- *     composition_html_bytes
+ *     SCHEMA_PREFIX
+ *     ⊕ composition_html_bytes
  *     ⊕ asset_shas (sorted by relative path)
  *     ⊕ font_snapshot_sha
  *     ⊕ encoder_config_canonical_json
@@ -17,11 +18,34 @@
  * use this to short-circuit `plan()` on workflow replay and to detect
  * cross-version mismatches (§9.3 PLAN_HASH_MISMATCH).
  *
- * Phase 1 ships the pure hashing utility only; no caller exists yet. The
- * `services/distributed/plan.ts` PR in Phase 3 will compose it.
+ * Pure utility; no caller exists yet — the distributed-render
+ * `services/distributed/plan.ts` will compose it.
+ *
+ * ## Encoding contract
+ *
+ * Every string-typed component (`fontSnapshotSha`,
+ * `encoderConfigCanonicalJson`, `producerVersion`, `ffmpegVersion`, asset
+ * paths and shas, the dimensions tuple) is hashed as UTF-8. External
+ * verifiers must encode the same way. Binary fields (`compositionHtml`)
+ * are hashed verbatim.
  */
 
 import { createHash } from "node:crypto";
+
+/**
+ * Schema-version prefix mixed into every digest. Bump the trailing version
+ * integer whenever the framing of `computePlanHash` changes (new fields,
+ * new delimiter, new field order, etc.) so every cached plan from an older
+ * producer is forced to mismatch and re-plan. This is impossible to
+ * backfill, so a deliberate bump is the only correct action.
+ */
+const PLAN_HASH_SCHEMA_PREFIX = "hyperframes-plan-hash-v1\x00";
+
+/**
+ * 0x00 byte used to frame each `hash.update()` call. Hoisted to module
+ * scope so it's not reallocated on every `computePlanHash` invocation.
+ */
+const FIELD_DELIMITER = Buffer.from([0x00]);
 
 /**
  * SHA-256 hex digest of an asset, paired with its plan-relative path. Sort
@@ -75,29 +99,30 @@ export interface PlanHashInput {
  */
 export function computePlanHash(input: PlanHashInput): string {
   const hash = createHash("sha256");
-  const delimiter = Buffer.from([0x00]);
+
+  hash.update(PLAN_HASH_SCHEMA_PREFIX, "utf8");
 
   hash.update(input.compositionHtml);
-  hash.update(delimiter);
+  hash.update(FIELD_DELIMITER);
 
   const sortedAssets = [...input.assets].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   );
   for (const asset of sortedAssets) {
     hash.update(asset.path, "utf8");
-    hash.update(delimiter);
+    hash.update(FIELD_DELIMITER);
     hash.update(asset.sha256, "utf8");
-    hash.update(delimiter);
+    hash.update(FIELD_DELIMITER);
   }
 
   hash.update(input.fontSnapshotSha, "utf8");
-  hash.update(delimiter);
+  hash.update(FIELD_DELIMITER);
   hash.update(input.encoderConfigCanonicalJson, "utf8");
-  hash.update(delimiter);
+  hash.update(FIELD_DELIMITER);
   hash.update(input.producerVersion, "utf8");
-  hash.update(delimiter);
+  hash.update(FIELD_DELIMITER);
   hash.update(input.ffmpegVersion, "utf8");
-  hash.update(delimiter);
+  hash.update(FIELD_DELIMITER);
 
   const d = input.dimensions;
   hash.update(`${d.fpsNum}/${d.fpsDen}x${d.width}x${d.height}x${d.format}`, "utf8");
