@@ -13,6 +13,25 @@ export interface EncoderOptions {
   pixelFormat?: string;
   useGpu?: boolean;
   hdr?: { transfer: HdrTransfer };
+  /**
+   * When `true`, force closed-GOP encoding with a keyframe at every
+   * `gopSize` boundary so the resulting chunk file can be losslessly
+   * concatenated (`ffmpeg -f concat -c copy`) with sibling chunks.
+   *
+   * Default `false`: GOP placement is left to libx264/libx265 defaults
+   * (open-GOP, scenecut-driven keyframes), preserving the in-process
+   * renderer's byte-identical output.
+   *
+   * Only honored by the SW libx264 / libx265 paths. GPU encoders, vp9, and
+   * prores ignore the flag (their concat-copy story is separate).
+   */
+  lockGopForChunkConcat?: boolean;
+  /**
+   * Required when `lockGopForChunkConcat` is `true`. Number of frames per
+   * GOP — set to `chunkSize` so every chunk starts on an IDR keyframe and
+   * concat-copy boundaries land on independently-decodable frames.
+   */
+  gopSize?: number;
 }
 
 export interface EncodeResult {

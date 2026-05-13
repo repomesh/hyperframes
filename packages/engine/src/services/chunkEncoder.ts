@@ -165,6 +165,36 @@ export function buildEncoderArgs(
       if (bitrate) args.push("-b:v", bitrate);
       else args.push("-crf", String(quality));
 
+      // Closed-GOP / forced-keyframe args so an external orchestrator can
+      // ffmpeg-concat chunk files with `-c copy`. Without these, libx264 /
+      // libx265 emit open-GOP frames with mid-chunk scenecut keyframes; the
+      // first frame of each chunk isn't an independently-decodable IDR and
+      // concat-copy playback freezes at chunk seams on some decoders.
+      const lockGop = options.lockGopForChunkConcat === true;
+      let gop = 0;
+      if (lockGop) {
+        if (
+          typeof options.gopSize !== "number" ||
+          !Number.isFinite(options.gopSize) ||
+          options.gopSize <= 0
+        ) {
+          throw new Error(
+            `[chunkEncoder] lockGopForChunkConcat=true requires a positive integer gopSize (received ${String(options.gopSize)})`,
+          );
+        }
+        gop = Math.floor(options.gopSize);
+        args.push(
+          "-g",
+          String(gop),
+          "-keyint_min",
+          String(gop),
+          "-sc_threshold",
+          "0",
+          "-force_key_frames",
+          `expr:eq(mod(n,${gop}),0)`,
+        );
+      }
+
       // Disable B-frames. Standard h264 with B-frames produces negative DTS
       // at the start of the stream (the first B-frame's decode order is
       // "before" the first I-frame's presentation time). VS Code's video
@@ -173,7 +203,12 @@ export function buildEncoderArgs(
       // -bf 0 makes PTS == DTS at every frame, eliminating the issue at the
       // source. Quality cost is ~5–10% larger files at the same CRF — a
       // worthwhile trade for "the file plays everywhere".
-      if (codec === "h264") {
+      //
+      // Also emit `-bf 0` for h265 when closed-GOP is locked: chunked
+      // concat-copy of h265 with B-frames hits the same negative-DTS hazard
+      // at every chunk boundary, even though single-stream h265 normally
+      // tolerates B-frames fine.
+      if (codec === "h264" || (codec === "h265" && lockGop)) {
         args.push("-bf", "0");
       }
 
@@ -182,15 +217,33 @@ export function buildEncoderArgs(
       // For HDR x265 paths we additionally embed BT.2020 + transfer + HDR static
       // mastering metadata via x265-params; libx264 only carries BT.709 tags
       // since HDR through H.264 is not supported by this encoder path.
+      //
+      // When closed-GOP is locked we additionally bake the keyint/scenecut
+      // controls into the codec param string so libx264's slice-type decisions
+      // and libx265's rate-control respect the IDR cadence end-to-end (without
+      // these, ffmpeg's `-force_key_frames` is honored but the underlying
+      // encoder may still insert mini-GOPs with open-GOP references that
+      // break concat-copy on some decoders). `repeat-headers=1` writes SPS/PPS
+      // at every keyframe so each chunk file is self-contained.
       const xParamsFlag = codec === "h264" ? "-x264-params" : "-x265-params";
       const colorParams =
         codec === "h265" && options.hdr
           ? getHdrEncoderColorParams(options.hdr.transfer).x265ColorParams
           : "colorprim=bt709:transfer=bt709:colormatrix=bt709";
+      let gopParams = "";
+      if (lockGop) {
+        const shared = "scenecut=0:open-gop=0:repeat-headers=1";
+        gopParams = codec === "h264" ? shared : `keyint=${gop}:min-keyint=${gop}:${shared}`;
+      }
+      const joinParams = (...parts: string[]): string =>
+        parts.filter((p) => p.length > 0).join(":");
       if (preset === "ultrafast") {
-        args.push(xParamsFlag, `aq-mode=3:${colorParams}`);
+        args.push(xParamsFlag, joinParams("aq-mode=3", colorParams, gopParams));
       } else {
-        args.push(xParamsFlag, `aq-mode=3:aq-strength=0.8:deblock=1,1:${colorParams}`);
+        args.push(
+          xParamsFlag,
+          joinParams("aq-mode=3", "aq-strength=0.8", "deblock=1,1", colorParams, gopParams),
+        );
       }
     }
     // Apple devices require hvc1 tag for HEVC playback (default hev1 won't open in QuickTime)
