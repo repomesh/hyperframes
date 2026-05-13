@@ -175,7 +175,12 @@ export {
 } from "./utils/ffprobe.js";
 
 export { downloadToTemp, isHttpUrl } from "./utils/urlDownloader.js";
-export { runFfmpeg, type RunFfmpegOptions, type RunFfmpegResult } from "./utils/runFfmpeg.js";
+export {
+  runFfmpeg,
+  formatFfmpegError,
+  type RunFfmpegOptions,
+  type RunFfmpegResult,
+} from "./utils/runFfmpeg.js";
 
 export {
   decodePng,
