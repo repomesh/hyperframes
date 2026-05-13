@@ -1,5 +1,6 @@
 import { PropertyPanel } from "./editor/PropertyPanel";
 import { MotionPanel } from "./editor/MotionPanel";
+import { LayersPanel } from "./editor/LayersPanel";
 import { CaptionPropertyPanel } from "../captions/components/CaptionPropertyPanel";
 import { RenderQueue } from "./renders/RenderQueue";
 import type { RenderJob } from "./renders/useRenderQueue";
@@ -115,6 +116,17 @@ export function StudioRightPanel({
                   >
                     Design
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setRightPanelTab("layers")}
+                    className={`h-8 rounded-xl px-3 text-[11px] font-medium transition-colors ${
+                      rightPanelTab === "layers"
+                        ? "bg-neutral-800 text-white"
+                        : "text-neutral-500 hover:bg-neutral-800/70 hover:text-neutral-200"
+                    }`}
+                  >
+                    Layers
+                  </button>
                   {STUDIO_MOTION_PANEL_ENABLED && (
                     <button
                       type="button"
@@ -143,7 +155,9 @@ export function StudioRightPanel({
               </button>
             </div>
             <div className="min-h-0 flex-1">
-              {designPanelActive ? (
+              {rightPanelTab === "layers" ? (
+                <LayersPanel />
+              ) : designPanelActive ? (
                 <PropertyPanel
                   projectId={projectId}
                   assets={assets}
