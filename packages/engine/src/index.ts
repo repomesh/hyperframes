@@ -65,11 +65,13 @@ export {
   closeCaptureSession,
   captureFrame,
   captureFrameToBuffer,
+  discardWarmupCapture,
   getCompositionDuration,
   getCapturePerfSummary,
   prepareCaptureSessionForReuse,
   type CaptureSession,
   type BeforeCaptureHook,
+  type DiscardWarmupInnerCapture,
 } from "./services/frameCapture.js";
 
 // ── Screenshot (BeginFrame) ─────────────────────────────────────────────────────

@@ -809,6 +809,69 @@ export async function captureFrameToBuffer(
   return { buffer, captureTimeMs };
 }
 
+/**
+ * Type of the "inner capture" function consumed by
+ * {@link discardWarmupCapture}. Matches the real `captureFrameCore` signature
+ * with the buffer-bearing result trimmed to what the caller actually uses
+ * (the wrapper never inspects the buffer). Exposed so unit tests can inject
+ * a stub instead of driving Chrome end-to-end.
+ */
+export type DiscardWarmupInnerCapture = (
+  session: CaptureSession,
+  frameIndex: number,
+  time: number,
+) => Promise<{ buffer: Buffer; quantizedTime: number; captureTimeMs: number }>;
+
+/**
+ * Perform one capture, throw away the buffer, and restore any session
+ * side-effects (perf counters, BeginFrame damage tallies) so downstream
+ * captures see state identical to a fresh session.
+ *
+ * Distributed chunk workers need this because Chrome's BeginFrame screenshot
+ * pipeline maintains a per-process `lastFrameCache`: when a captured frame's
+ * `hasDamage` reports `false`, the screenshot path returns the previously
+ * captured buffer. For chunk N (N > 0) the worker has no prior frame in its
+ * cache, so the very first capture's `hasDamage` reporting diverges from
+ * what an in-process render at the same absolute frame index would see (the
+ * in-process renderer always has frame N-1 cached). One discard capture
+ * before the first real capture primes the cache.
+ *
+ * The function intentionally restores perf state so the warmup capture does
+ * NOT bias `getCapturePerfSummary()`'s per-frame averages.
+ *
+ * No file is written; the buffer is discarded.
+ *
+ * @param session — initialized capture session
+ * @param frameIndex — frame index to warm up with (default 0). Chunk
+ *   workers typically pass their chunk's first absolute frame index.
+ * @param time — time in seconds (default 0). Chunk workers typically pass
+ *   the corresponding `frameIndex / fps`.
+ * @param innerCapture — injectable for tests; defaults to the real
+ *   `captureFrameCore`.
+ */
+export async function discardWarmupCapture(
+  session: CaptureSession,
+  frameIndex: number = 0,
+  time: number = 0,
+  innerCapture: DiscardWarmupInnerCapture = captureFrameCore,
+): Promise<void> {
+  // Snapshot the side-effect counters captureFrameCore mutates. We use a
+  // shallow `{...}` for capturePerf because all five fields are primitive
+  // numbers — no nested state to deep-copy.
+  const perfBefore = { ...session.capturePerf };
+  const hasDamageBefore = session.beginFrameHasDamageCount;
+  const noDamageBefore = session.beginFrameNoDamageCount;
+  try {
+    await innerCapture(session, frameIndex, time);
+  } finally {
+    // Always restore — even on error. A failed warmup capture should not
+    // leak inflated perf counters into the real capture summary.
+    session.capturePerf = perfBefore;
+    session.beginFrameHasDamageCount = hasDamageBefore;
+    session.beginFrameNoDamageCount = noDamageBefore;
+  }
+}
+
 export async function closeCaptureSession(session: CaptureSession): Promise<void> {
   // INVARIANT: closeCaptureSession is idempotent. The renderOrchestrator HDR
   // cleanup path tracks a `domSessionClosed` flag and may still re-call this
