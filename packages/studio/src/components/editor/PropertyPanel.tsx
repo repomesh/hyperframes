@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Eye, Layers, MessageSquare, Move, RotateCcw, X } from "../../icons/SystemIcons";
+import { Eye, Layers, MessageSquare, Move, X } from "../../icons/SystemIcons";
 import {
   collectDomEditLayerItems,
   getDomEditLayerKey,
@@ -46,7 +46,6 @@ interface PropertyPanelProps {
   onSetTextFieldStyle: (fieldKey: string, property: string, value: string) => void;
   onAddTextField: (afterFieldKey?: string) => string | Promise<string | null> | null;
   onRemoveTextField: (fieldKey: string) => void;
-  onResetManualEdits: (element: DomEditSelection) => void;
   onAskAgent: () => void;
   onImportAssets?: (files: FileList) => Promise<string[]>;
   fontAssets?: ImportedFontAsset[];
@@ -134,7 +133,6 @@ export const PropertyPanel = memo(function PropertyPanel({
   onSetTextFieldStyle,
   onAddTextField,
   onRemoveTextField,
-  onResetManualEdits,
   onAskAgent,
   onImportAssets,
   fontAssets = [],
@@ -146,30 +144,32 @@ export const PropertyPanel = memo(function PropertyPanel({
 
   if (!element) {
     return (
-      <div className="flex h-full flex-col items-center justify-center bg-neutral-900 px-6 text-center">
-        {multiSelectCount > 1 ? (
-          <>
-            <Layers size={18} className="mb-3 text-neutral-600" />
-            <p className="text-sm font-medium text-neutral-200">
-              {multiSelectCount} elements selected
-            </p>
-            <p className="mt-2 max-w-[260px] text-xs leading-5 text-neutral-500">
-              Select a single element to edit its properties. Click an element in the preview or use
-              the timeline layer panel.
-            </p>
-          </>
-        ) : (
-          <>
-            <Eye size={18} className="mb-3 text-neutral-600" />
-            <p className="text-sm font-medium text-neutral-200">
-              Select an element in the preview.
-            </p>
-            <p className="mt-2 max-w-[260px] text-xs leading-5 text-neutral-500">
-              The inspector is tuned for element edits with safer geometry controls, color picking,
-              and cleaner grouped layer controls.
-            </p>
-          </>
-        )}
+      <div className="flex h-full flex-col bg-neutral-900">
+        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+          {multiSelectCount > 1 ? (
+            <>
+              <Layers size={18} className="mb-3 text-neutral-600" />
+              <p className="text-sm font-medium text-neutral-200">
+                {multiSelectCount} elements selected
+              </p>
+              <p className="mt-2 max-w-[260px] text-xs leading-5 text-neutral-500">
+                Select a single element to edit its properties. Click an element in the preview or
+                use the timeline layer panel.
+              </p>
+            </>
+          ) : (
+            <>
+              <Eye size={18} className="mb-3 text-neutral-600" />
+              <p className="text-sm font-medium text-neutral-200">
+                Select an element in the preview.
+              </p>
+              <p className="mt-2 max-w-[260px] text-xs leading-5 text-neutral-500">
+                The inspector is tuned for element edits with safer geometry controls, color
+                picking, and cleaner grouped layer controls.
+              </p>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -252,15 +252,6 @@ export const PropertyPanel = memo(function PropertyPanel({
           >
             <MessageSquare size={15} />
             <span>{copiedAgentPrompt ? "Prompt copied" : "Ask agent"}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onResetManualEdits(element)}
-            title="Reset move, size, and rotation edits"
-            className="inline-flex h-8 items-center justify-center gap-2 rounded-xl border border-neutral-700 bg-neutral-950 px-3.5 text-[11px] font-medium text-neutral-100 transition-colors hover:border-neutral-500 hover:text-white"
-          >
-            <RotateCcw size={14} />
-            <span>Reset edits</span>
           </button>
         </div>
       </div>

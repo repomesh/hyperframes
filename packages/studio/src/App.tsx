@@ -144,6 +144,8 @@ export function StudioApp() {
     recordEdit: editHistory.recordEdit,
     previewIframeRef,
     activeCompPathRef,
+    domEditSaveTimestampRef,
+    reloadPreview: () => setRefreshKey((k) => k + 1),
   });
 
   const timelineEditing = useTimelineEditing({
@@ -197,12 +199,9 @@ export function StudioApp() {
     setRightPanelTab: panelLayout.setRightPanelTab,
     showToast,
     refreshPreviewDocumentVersion,
-    commitStudioManualEditManifestOptimistically:
-      manifestPersistence.commitStudioManualEditManifestOptimistically,
+    queueDomEditSave: manifestPersistence.queueDomEditSave,
     commitStudioMotionManifestOptimistically:
       manifestPersistence.commitStudioMotionManifestOptimistically,
-    applyCurrentStudioManualEditsToPreview:
-      manifestPersistence.applyCurrentStudioManualEditsToPreview,
     applyCurrentStudioMotionToPreview: manifestPersistence.applyCurrentStudioMotionToPreview,
     readProjectFile: fileManager.readProjectFile,
     writeProjectFile: fileManager.writeProjectFile,

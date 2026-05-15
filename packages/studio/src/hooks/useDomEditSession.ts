@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import type { TimelineElement } from "../player";
 import { STUDIO_INSPECTOR_PANELS_ENABLED } from "../components/editor/manualEditingAvailability";
 import { findElementForSelection } from "../components/editor/domEditing";
-import type { StudioManualEditManifest } from "../components/editor/manualEdits";
 import type { StudioMotionManifest } from "../components/editor/studioMotion";
 import type { ImportedFontAsset } from "../components/editor/fontAssets";
 import type { EditHistoryKind } from "../utils/editHistory";
@@ -36,15 +35,11 @@ export interface UseDomEditSessionParams {
   setRightPanelTab: (tab: RightPanelTab) => void;
   showToast: (message: string, tone?: "error" | "info") => void;
   refreshPreviewDocumentVersion: () => void;
-  commitStudioManualEditManifestOptimistically: (
-    updateManifest: (manifest: StudioManualEditManifest) => StudioManualEditManifest,
-    options: { label: string; coalesceKey: string },
-  ) => void;
+  queueDomEditSave: (save: () => Promise<void>) => Promise<void>;
   commitStudioMotionManifestOptimistically: (
     updateManifest: (manifest: StudioMotionManifest) => StudioMotionManifest,
     options: { label: string; coalesceKey: string },
   ) => void;
-  applyCurrentStudioManualEditsToPreview: (iframe: HTMLIFrameElement | null) => void;
   applyCurrentStudioMotionToPreview: (iframe: HTMLIFrameElement | null) => void;
   readProjectFile: (path: string) => Promise<string>;
   writeProjectFile: (path: string, content: string) => Promise<void>;
@@ -85,9 +80,8 @@ export function useDomEditSession({
   setRightPanelTab,
   showToast,
   refreshPreviewDocumentVersion,
-  commitStudioManualEditManifestOptimistically,
+  queueDomEditSave,
   commitStudioMotionManifestOptimistically,
-  applyCurrentStudioManualEditsToPreview,
   applyCurrentStudioMotionToPreview,
   readProjectFile: _readProjectFile,
   writeProjectFile,
@@ -114,7 +108,6 @@ export function useDomEditSession({
     domEditGroupSelections,
     domEditHoverSelection,
     domEditSelectionRef,
-    domEditGroupSelectionsRef,
     applyDomSelection,
     clearDomSelection,
     buildDomSelectionFromTarget,
@@ -123,7 +116,6 @@ export function useDomEditSession({
     buildDomSelectionForTimelineElement,
     handleTimelineElementSelect,
     refreshDomEditSelectionFromPreview,
-    refreshDomEditGroupSelectionsFromPreview,
   } = useDomSelection({
     projectId,
     activeCompPath,
@@ -176,7 +168,6 @@ export function useDomEditSession({
     captionEditMode,
     compositionLoading,
     previewIframeRef,
-    activeCompPath,
     showToast,
     applyDomSelection,
     resolveDomSelectionFromPreviewPoint,
@@ -208,9 +199,8 @@ export function useDomEditSession({
     activeCompPath,
     previewIframeRef,
     showToast,
-    commitStudioManualEditManifestOptimistically,
+    queueDomEditSave,
     commitStudioMotionManifestOptimistically,
-    applyCurrentStudioManualEditsToPreview,
     applyCurrentStudioMotionToPreview,
     writeProjectFile,
     domEditSaveTimestampRef,
@@ -221,12 +211,9 @@ export function useDomEditSession({
     projectIdRef,
     reloadPreview,
     domEditSelection,
-    domEditSelectionRef,
-    domEditGroupSelectionsRef,
     applyDomSelection,
     clearDomSelection,
     refreshDomEditSelectionFromPreview,
-    refreshDomEditGroupSelectionsFromPreview,
     buildDomSelectionFromTarget,
   });
 
