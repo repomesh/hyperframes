@@ -158,6 +158,20 @@ export function findMatchingTimelineElementId(
   return null;
 }
 
+export function resolveTimelineSelectionSeekTime(
+  currentTime: number,
+  element: Pick<TimelineElement, "start" | "duration"> | null | undefined,
+): number | null {
+  if (!element) return null;
+  if (!Number.isFinite(element.start) || !Number.isFinite(element.duration)) return null;
+
+  const start = Math.max(0, element.start);
+  const end = Math.max(start, start + Math.max(0, element.duration));
+  const time = Number.isFinite(currentTime) ? currentTime : start;
+
+  return clampNumber(time, start, end);
+}
+
 export function clampNumber(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.min(Math.max(value, min), max);

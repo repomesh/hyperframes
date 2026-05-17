@@ -8,7 +8,10 @@ import {
 import { useStudioContext } from "../../contexts/StudioContext";
 import { useDomEditContext } from "../../contexts/DomEditContext";
 import { usePlayerStore } from "../../player";
-import { findMatchingTimelineElementId } from "../../utils/studioHelpers";
+import {
+  findMatchingTimelineElementId,
+  resolveTimelineSelectionSeekTime,
+} from "../../utils/studioHelpers";
 import { Layers } from "../../icons/SystemIcons";
 
 const TAG_ICONS: Record<string, string> = {
@@ -49,8 +52,14 @@ interface CollapsedState {
 }
 
 export const LayersPanel = memo(function LayersPanel() {
-  const { previewIframeRef, activeCompPath, refreshKey, compositionLoading, timelineElements } =
-    useStudioContext();
+  const {
+    previewIframeRef,
+    activeCompPath,
+    refreshKey,
+    compositionLoading,
+    timelineElements,
+    currentTime,
+  } = useStudioContext();
   const { domEditSelection, applyDomSelection, updateDomEditHoverSelection } = useDomEditContext();
 
   const [layers, setLayers] = useState<DomEditLayerItem[]>([]);
@@ -140,11 +149,12 @@ export const LayersPanel = memo(function LayersPanel() {
       if (matchedId) {
         const el = timelineElements.find((e) => (e.key ?? e.id) === matchedId);
         if (el) {
-          usePlayerStore.getState().requestSeek(el.start + el.duration / 2);
+          const nextTime = resolveTimelineSelectionSeekTime(currentTime, el);
+          if (nextTime != null) usePlayerStore.getState().requestSeek(nextTime);
         }
       }
     },
-    [resolveSelection, timelineElements],
+    [currentTime, resolveSelection, timelineElements],
   );
 
   const handleSelectLayer = useCallback(
