@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/aws-lambda",
-  "version": "0.0.1",
+  "version": "0.6.20",
   "description": "AWS Lambda adapter for HyperFrames distributed rendering — handler, client-side SDK, and CDK construct.",
   "repository": {
     "type": "git",
@@ -8,25 +8,37 @@
     "directory": "packages/aws-lambda"
   },
   "files": [
-    "src/",
+    "dist/",
     "scripts/",
     "README.md"
   ],
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./handler": "./src/handler.ts",
-    "./sdk": "./src/sdk/index.ts",
-    "./cdk": "./src/cdk/index.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./handler": {
+      "import": "./dist/handler.js",
+      "types": "./dist/handler.d.ts"
+    },
+    "./sdk": {
+      "import": "./dist/sdk/index.js",
+      "types": "./dist/sdk/index.d.ts"
+    },
+    "./cdk": {
+      "import": "./dist/cdk/index.js",
+      "types": "./dist/cdk/index.d.ts"
+    }
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "node build.mjs",
     "build:zip": "tsx scripts/build-zip.ts",
     "probe:beginframe": "tsx scripts/probe-beginframe.ts",
     "probe:beginframe:docker": "docker build -f scripts/probe-beginframe.dockerfile -t hyperframes-lambda-probe:local ../.. && docker run --rm hyperframes-lambda-probe:local",

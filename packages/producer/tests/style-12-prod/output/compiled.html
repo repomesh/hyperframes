@@ -492,7 +492,7 @@
   var __hfEscapeAttr = function(value) {
     return (value + "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   };
-  var __hfRootSelector = null || (__hfCompId
+  var __hfRootSelector = "[data-composition-id=\"mondrian-bg\"]" || (__hfCompId
     ? '[data-composition-id="' + __hfEscapeAttr(__hfCompId) + '"]'
     : "");
   var __hfRoot = null;
@@ -754,7 +754,8 @@
   var __hfRun = function() {
     try {
       (function(document, gsap, window, __hyperframes) {
-(function () {
+
+      (function () {
         const tl = gsap.timeline({ paused: true });
 
         tl.to(".bar-1", { left: "100%", duration: 0.45, ease: "expo.out" }, 1.1);
@@ -764,6 +765,7 @@
 
         window.__timelines["mondrian-bg"] = tl;
       })();
+    
       }).call(window, __hfScopedDocument, __hfScopedGsap, __hfScopedWindow, __hfScopedHyperframes);
     } catch (_err) {
       console.error(__hfErrorLabel, __hfCompId, _err);
@@ -782,7 +784,7 @@
   var __hfEscapeAttr = function(value) {
     return (value + "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   };
-  var __hfRootSelector = null || (__hfCompId
+  var __hfRootSelector = "[data-composition-id=\"mondrian-colors\"]" || (__hfCompId
     ? '[data-composition-id="' + __hfEscapeAttr(__hfCompId) + '"]'
     : "");
   var __hfRoot = null;
@@ -1044,7 +1046,8 @@
   var __hfRun = function() {
     try {
       (function(document, gsap, window, __hyperframes) {
-(function () {
+
+      (function () {
         const TRANSCRIPT = [
           { text: "We", start: 0.14, end: 0.239 },
           { text: "asked", start: 0.28, end: 0.459 },
@@ -1181,6 +1184,7 @@
 
         window.__timelines["mondrian-colors"] = tl;
       })();
+    
       }).call(window, __hfScopedDocument, __hfScopedGsap, __hfScopedWindow, __hfScopedHyperframes);
     } catch (_err) {
       console.error(__hfErrorLabel, __hfCompId, _err);
@@ -1199,7 +1203,7 @@
   var __hfEscapeAttr = function(value) {
     return (value + "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
   };
-  var __hfRootSelector = null || (__hfCompId
+  var __hfRootSelector = "[data-composition-id=\"mondrian-captions\"]" || (__hfCompId
     ? '[data-composition-id="' + __hfEscapeAttr(__hfCompId) + '"]'
     : "");
   var __hfRoot = null;
@@ -1461,7 +1465,8 @@
   var __hfRun = function() {
     try {
       (function(document, gsap, window, __hyperframes) {
-(function () {
+
+      (function () {
         const TRANSCRIPT = [
           { text: "We", start: 0.14, end: 0.239 },
           { text: "asked", start: 0.28, end: 0.459 },
@@ -1551,6 +1556,7 @@
 
         window.__timelines["mondrian-captions"] = tl;
       })();
+    
       }).call(window, __hfScopedDocument, __hfScopedGsap, __hfScopedWindow, __hfScopedHyperframes);
     } catch (_err) {
       console.error(__hfErrorLabel, __hfCompId, _err);

@@ -25,6 +25,7 @@ const PACKAGES = [
   "packages/shader-transitions",
   "packages/studio",
   "packages/cli",
+  "packages/aws-lambda",
 ];
 
 const ROOT = join(import.meta.dirname, "..");

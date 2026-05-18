@@ -37,10 +37,27 @@ import {
 // In Dockerfile.test the workspace copy of aws-lambda's src isn't present,
 // so a static import here would fail at module-load time even when
 // running `--mode=in-process`. Load it on demand instead.
-async function loadLambdaLocalRender(): Promise<
-  typeof import("./regression-harness-lambda-local.js").runLambdaLocalRender
-> {
-  const mod = await import("./regression-harness-lambda-local.js");
+//
+// The signature is typed via `RunLambdaLocalRender` (in its own types-only
+// file) instead of `typeof import(...)` so producer's tsc doesn't have to
+// type-check the implementation. The implementation imports
+// `@hyperframes/aws-lambda`, whose types come from `dist/index.d.ts` after
+// aws-lambda's build runs — a chicken-and-egg with producer's tsc that
+// would otherwise fail the whole-repo build.
+//
+// The dynamic import path is indirected through a variable so tsc can't
+// statically resolve the target file. Without this indirection tsc still
+// pulls `regression-harness-lambda-local.ts` (and its `@hyperframes/aws-lambda`
+// imports) into the program even though the tsconfig `exclude` list
+// nominally hides it. `tsx` resolves the path normally at runtime.
+import type { RunLambdaLocalRender } from "./regression-harness-lambda-local-types.js";
+
+const LAMBDA_LOCAL_MODULE = "./regression-harness-lambda-local.js";
+
+async function loadLambdaLocalRender(): Promise<RunLambdaLocalRender> {
+  const mod = (await import(LAMBDA_LOCAL_MODULE)) as {
+    runLambdaLocalRender: RunLambdaLocalRender;
+  };
   return mod.runLambdaLocalRender;
 }
 
