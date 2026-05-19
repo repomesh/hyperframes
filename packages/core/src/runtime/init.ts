@@ -1724,6 +1724,10 @@ export function initSandboxRuntimeModular(): void {
     }
   };
 
+  // Unpause all non-root timelines. Per GSAP semantics, paused(false) on a
+  // child timeline that hasn't been reached by the parent's playhead is a
+  // no-op — the child won't fire onStart/onUpdate until the parent seeks
+  // past its insertion point. Per-frame visibility is gated by the engine.
   const activateNestedChildTimelines = (masterTimeline: RuntimeTimelineLike) => {
     const timelines = (window.__timelines ?? {}) as Record<string, RuntimeTimelineLike | undefined>;
     for (const tl of Object.values(timelines)) {

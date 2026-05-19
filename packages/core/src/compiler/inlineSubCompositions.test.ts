@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { parseHTML } from "linkedom";
 import { inlineSubCompositions } from "./inlineSubCompositions";
 
+// Fixtures reference GSAP CDN but are never loaded in a real browser — resolveHtml is mocked.
+
 /**
  * Minimal sub-composition HTML that uses `#intro` as its CSS and GSAP scope.
  * This is the pattern that breaks when the producer path strips the inner root.

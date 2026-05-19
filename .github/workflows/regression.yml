@@ -72,7 +72,7 @@ jobs:
           - shard: shard-6
             args: "overlay-montage-prod style-12-prod chat missing-host-comp-id png-sequence"
           - shard: shard-7
-            args: "sub-composition-video style-18-prod raf-ball-render-compat font-variant-numeric"
+            args: "sub-composition-video style-18-prod raf-ball-render-compat font-variant-numeric sub-comp-t0 sub-comp-id-selector"
           - shard: shard-8
             args: "style-13-prod style-6-prod vignelli-stacking gsap-letters-render-compat"
     steps:
