@@ -221,10 +221,6 @@ function maybeInlineRelativeAssetUrl(urlValue: string, projectDir: string): stri
   return appendSuffixToUrl(dataUrl, suffix);
 }
 
-function isJsonRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 // fallow-ignore-next-line complexity
 function rewriteLookLutWithInlinedAssets(value: string, projectDir: string): string {
   if (!value.trim().startsWith("{")) return value;
@@ -234,19 +230,21 @@ function rewriteLookLutWithInlinedAssets(value: string, projectDir: string): str
   } catch {
     return value;
   }
-  if (!isJsonRecord(parsed)) return value;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return value;
 
-  const lut = parsed.lut;
+  const lut = Reflect.get(parsed, "lut");
   if (typeof lut === "string") {
     const inlined = maybeInlineRelativeAssetUrl(lut, projectDir);
     if (!inlined) return value;
-    parsed.lut = inlined;
+    Reflect.set(parsed, "lut", inlined);
     return JSON.stringify(parsed);
   }
-  if (!isJsonRecord(lut) || typeof lut.src !== "string") return value;
-  const inlined = maybeInlineRelativeAssetUrl(lut.src, projectDir);
+  if (typeof lut !== "object" || lut === null || Array.isArray(lut)) return value;
+  const lutSrc = Reflect.get(lut, "src");
+  if (typeof lutSrc !== "string") return value;
+  const inlined = maybeInlineRelativeAssetUrl(lutSrc, projectDir);
   if (!inlined) return value;
-  lut.src = inlined;
+  Reflect.set(lut, "src", inlined);
   return JSON.stringify(parsed);
 }
 

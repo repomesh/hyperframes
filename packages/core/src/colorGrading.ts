@@ -234,25 +234,11 @@ function readColorGradingObject(raw: unknown): Record<string, unknown> | null {
   return isRecord(raw) ? raw : null;
 }
 
-function hasOwnKey(value: HfColorGradingVariableMap, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
 function resolveStringVariableRef(value: string, variables: HfColorGradingVariableMap): unknown {
   const match = value.trim().match(VARIABLE_REF_RE);
   if (!match) return value;
   const key = match[1] ?? match[2] ?? "";
-  return key && hasOwnKey(variables, key) ? variables[key] : value;
-}
-
-function parseJsonColorGradingString(value: string): unknown {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("{")) return value;
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    return value;
-  }
+  return key && Object.hasOwn(variables, key) ? variables[key] : value;
 }
 
 export function resolveHfColorGradingVariables(
@@ -262,8 +248,13 @@ export function resolveHfColorGradingVariables(
   if (typeof raw === "string") {
     const direct = resolveStringVariableRef(raw, variables);
     if (direct !== raw) return direct;
-    const parsed = parseJsonColorGradingString(raw);
-    return parsed === raw ? raw : resolveHfColorGradingVariables(parsed, variables);
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("{")) return raw;
+    try {
+      return resolveHfColorGradingVariables(JSON.parse(trimmed) as unknown, variables);
+    } catch {
+      return raw;
+    }
   }
   if (Array.isArray(raw)) {
     return raw.map((item) => resolveHfColorGradingVariables(item, variables));
@@ -333,13 +324,8 @@ export function serializeHfColorGrading(
 ): string {
   const normalized = normalizeHfColorGrading(grading);
   if (!normalized) return "";
-  return JSON.stringify({
-    preset: normalized.preset,
-    intensity: normalized.intensity,
-    adjust: normalized.adjust,
-    lut: normalized.lut,
-    colorSpace: normalized.colorSpace,
-  });
+  const { enabled: _enabled, ...serializable } = normalized;
+  return JSON.stringify(serializable);
 }
 
 export function isHfColorGradingActive(
