@@ -27,6 +27,16 @@ function isGotoMessage(data: unknown): data is GotoMessage {
  * Presenter (default) mode: posts position updates to the channel.
  * Audience mode: listens for goto messages and calls the provided handler.
  */
+/**
+ * Per-deck channel name. The presenter and its audience window load the same URL
+ * (path), so keying on pathname keeps them paired while isolating other decks
+ * presenting on the same origin (which would otherwise cross-talk on a fixed name).
+ */
+export function slideshowChannelName(): string {
+  const path = typeof location !== "undefined" ? location.pathname : "";
+  return `hf-slideshow:${path}`;
+}
+
 export class SlideshowChannel {
   private channel: BroadcastChannel | null = null;
 
@@ -35,7 +45,7 @@ export class SlideshowChannel {
     private readonly onGoto: (msg: GotoMessage) => void,
   ) {
     try {
-      this.channel = new BroadcastChannel("hf-slideshow");
+      this.channel = new BroadcastChannel(slideshowChannelName());
     } catch {
       // BroadcastChannel unavailable (e.g. unsupported env); degrade silently.
       return;

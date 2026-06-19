@@ -7,6 +7,7 @@ import type {
 import { swallow } from "./diagnostics";
 import { readElementPlaybackRate } from "./media";
 import { createRuntimeStartTimeResolver } from "./startResolver";
+import { isSceneLikeCompositionId } from "../slideshow/sceneId";
 
 const AUTHORED_DURATION_ATTR = "data-hf-authored-duration";
 const AUTHORED_END_ATTR = "data-hf-authored-end";
@@ -229,13 +230,6 @@ export function collectRuntimeTimelinePayload(params: {
       maxWindowEndSeconds = Math.max(maxWindowEndSeconds, Math.max(0, start) + duration);
     }
     return maxWindowEndSeconds > 0 ? maxWindowEndSeconds : null;
-  };
-  const isSceneLikeCompositionId = (compositionId: string): boolean => {
-    const normalized = compositionId.trim().toLowerCase();
-    if (!normalized || normalized === "main") return false;
-    if (normalized.includes("caption")) return false;
-    if (normalized.includes("ambient")) return false;
-    return true;
   };
   const resolveNearestCompositionContext = (
     node: Element,

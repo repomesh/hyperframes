@@ -20,6 +20,7 @@ import type { SlideshowManifest } from "@hyperframes/core/slideshow";
 import {
   SLIDESHOW_ISLAND_TYPE,
   SLIDESHOW_MANIFEST_VERSION,
+  parseSlideshowManifest,
   slideshowIslandRegex,
 } from "@hyperframes/core/slideshow";
 import type { Composition } from "@hyperframes/sdk";
@@ -64,6 +65,18 @@ export async function persistSlideshowManifest(args: PersistSlideshowArgs): Prom
   const { manifest, sdkSession, originalContent, targetPath, deps, label, coalesceKey } = args;
 
   const islandHtml = buildSlideshowIslandHtml(manifest);
+
+  // Write-time validation: confirm the island we just built round-trips to a
+  // valid manifest before touching disk, so a malformed edit can't corrupt the
+  // composition. parseSlideshowManifest throws on a structurally-invalid island.
+  try {
+    if (!parseSlideshowManifest(islandHtml)) {
+      throw new Error("built island did not parse back to a manifest");
+    }
+  } catch (err) {
+    throw new Error(`refusing to persist invalid slideshow manifest: ${(err as Error).message}`);
+  }
+
   const current = sdkSession.serialize();
 
   // Strip ALL existing islands (handles the case where two stale islands
@@ -77,6 +90,10 @@ export async function persistSlideshowManifest(args: PersistSlideshowArgs): Prom
   } else {
     after = stripped + "\n" + islandHtml;
   }
+
+  // No-op gate: if the rewritten HTML is byte-identical to the current serialized
+  // HTML, skip the write — avoids a spurious disk write and a no-op undo entry.
+  if (after === current) return;
 
   await persistSdkSerialize(after, targetPath, originalContent, deps, {
     label: label ?? "Edit slideshow",

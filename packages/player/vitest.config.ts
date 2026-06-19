@@ -1,7 +1,10 @@
 import { defineConfig } from "vitest/config";
-import { resolve } from "path";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const coreRoot = resolve(new URL("..", import.meta.url).pathname, "core/src");
+// fileURLToPath (not URL.pathname): on Windows .pathname yields "/D:/..." with a
+// leading slash, which breaks resolve() and the alias below.
+const coreRoot = resolve(fileURLToPath(new URL("../core/src", import.meta.url)));
 
 export default defineConfig({
   resolve: {

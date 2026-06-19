@@ -30,22 +30,37 @@ export function toggleMainLineSlide(
 
 // fallow-ignore-next-line complexity
 /** Move a main-line slide up or down by one position. */
+/** Swap the slide with `sceneId` one step up/down within a slide list. */
+function swapSlide(slides: SlideRef[], sceneId: string, direction: "up" | "down"): SlideRef[] {
+  const idx = slides.findIndex((s) => s.sceneId === sceneId);
+  if (idx === -1) return slides;
+  const next = direction === "up" ? idx - 1 : idx + 1;
+  if (next < 0 || next >= slides.length) return slides;
+  const out = [...slides];
+  const a = out[idx];
+  const b = out[next];
+  if (!a || !b) return slides;
+  out[idx] = b;
+  out[next] = a;
+  return out;
+}
+
 export function reorderMainLineSlide(
   manifest: SlideshowManifest,
   sceneId: string,
   direction: "up" | "down",
 ): SlideshowManifest {
-  const idx = manifest.slides.findIndex((s) => s.sceneId === sceneId);
-  if (idx === -1) return manifest;
-  const next = direction === "up" ? idx - 1 : idx + 1;
-  if (next < 0 || next >= manifest.slides.length) return manifest;
-  const slides = [...manifest.slides];
-  const a = slides[idx];
-  const b = slides[next];
-  if (!a || !b) return manifest;
-  slides[idx] = b;
-  slides[next] = a;
-  return { ...manifest, slides };
+  return mapSlidesIn(manifest, undefined, (slides) => swapSlide(slides, sceneId, direction));
+}
+
+/** Reorder a slide within a branch sequence (parallel to reorderMainLineSlide). */
+export function reorderBranchSlide(
+  manifest: SlideshowManifest,
+  sequenceId: string,
+  sceneId: string,
+  direction: "up" | "down",
+): SlideshowManifest {
+  return mapSlidesIn(manifest, sequenceId, (slides) => swapSlide(slides, sceneId, direction));
 }
 
 /** Apply fn to a branch's slide list (sequenceId) or the main line (undefined). */

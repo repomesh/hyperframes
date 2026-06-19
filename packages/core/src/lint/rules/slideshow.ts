@@ -1,19 +1,10 @@
-// fallow-ignore-file code-duplication
 import type { LintContext, HyperframeLintFinding } from "../context";
 import type { LintRule } from "../types";
 import { readAttr } from "../utils";
 import { parseSlideshowManifest, resolveSlideshow } from "../../slideshow/parseSlideshow";
+import { isSceneLikeCompositionId } from "../../slideshow/sceneId";
 
 type Scene = { id: string; start: number; duration: number };
-
-/** Mirrors isSceneLikeCompositionId in packages/core/src/runtime/timeline.ts */
-function isSceneLikeCompositionId(compositionId: string): boolean {
-  const normalized = compositionId.trim().toLowerCase();
-  if (!normalized || normalized === "main") return false;
-  if (normalized.includes("caption")) return false;
-  if (normalized.includes("ambient")) return false;
-  return true;
-}
 
 function parseTiming(raw: string): { start: number; duration: number } | null {
   const startStr = readAttr(raw, "data-start");

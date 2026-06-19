@@ -9,6 +9,7 @@ import {
   relative as nodeRelative,
   isAbsolute as nodeIsAbsolute,
 } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface RenderPaths {
   absoluteProjectDir: string;
@@ -17,7 +18,9 @@ export interface RenderPaths {
 
 const DEFAULT_RENDERS_DIR =
   process.env.PRODUCER_RENDERS_DIR ??
-  nodeResolve(new URL(import.meta.url).pathname, "../../..", "renders");
+  // fileURLToPath (not URL.pathname): on Windows .pathname is "/D:/..." which
+  // resolves to a bogus renders dir.
+  nodeResolve(fileURLToPath(import.meta.url), "../../..", "renders");
 
 type PathModuleLike = {
   resolve: (...segments: string[]) => string;

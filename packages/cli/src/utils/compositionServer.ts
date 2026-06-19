@@ -3,6 +3,7 @@
 // composition asset files, and binding to a free port.
 import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** Minimal surface of a listening server (satisfied by @hono/node-server's ServerType). */
 interface PortBindable {
@@ -15,7 +16,9 @@ interface PortBindable {
 }
 
 function helperDir(): string {
-  return dirname(new URL(import.meta.url).pathname);
+  // fileURLToPath (not URL.pathname) so the Windows "/D:/..." leading-slash form
+  // doesn't break the bundle-path resolution below.
+  return dirname(fileURLToPath(import.meta.url));
 }
 
 export function resolveRuntimePath(): string | null {

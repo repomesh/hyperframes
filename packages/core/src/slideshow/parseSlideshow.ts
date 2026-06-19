@@ -69,7 +69,7 @@ function isSlideSequence(v: unknown): boolean {
 }
 
 function isManifest(v: unknown): v is SlideshowManifest {
-  if (typeof v !== "object" || v === null) return false;
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const o = v as Record<string, unknown>;
   if (!Array.isArray(o["slides"]) || !o["slides"].every(isSlideRef)) return false;
   if (o["slideSequences"] !== undefined) {
@@ -158,6 +158,10 @@ export function resolveSlideshow(
 
   const sequences: Record<string, ResolvedSlideSequence> = {};
   for (const seq of manifest.slideSequences ?? []) {
+    // Flag duplicate sequence ids rather than silently overwriting the earlier one.
+    if (Object.prototype.hasOwnProperty.call(sequences, seq.id)) {
+      errors.push(`duplicate slideSequence id "${seq.id}" — only the last definition is kept`);
+    }
     sequences[seq.id] = {
       id: seq.id,
       label: seq.label,

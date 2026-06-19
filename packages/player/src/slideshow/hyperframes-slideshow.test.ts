@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { handleRuntimeMessage } from "../runtime-message-handler.js";
 import { dropInvalidSlides } from "./hyperframes-slideshow.js";
+import { slideshowChannelName } from "./slideshowPresenter.js";
 
 // Dynamic import defers custom-element registration until happy-dom is active.
 // (Static top-level imports execute before the test environment is set up, which
@@ -524,7 +525,7 @@ describe("<hyperframes-slideshow> presenter mode", () => {
   const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
   it("audience mode: mirrors full position (sequence + slide + fragment) via syncTo", async () => {
-    const presenterChannel = new BroadcastChannel("hf-slideshow");
+    const presenterChannel = new BroadcastChannel(slideshowChannelName());
     const { el, getLastSync } = makeAudienceEl();
 
     await tick();
@@ -542,7 +543,7 @@ describe("<hyperframes-slideshow> presenter mode", () => {
   });
 
   it("audience mode: mirrors a branch position too (full sequenceId forwarded to syncTo)", async () => {
-    const presenterChannel = new BroadcastChannel("hf-slideshow");
+    const presenterChannel = new BroadcastChannel(slideshowChannelName());
     const { el, getLastSync } = makeAudienceEl();
 
     await tick();
@@ -566,7 +567,7 @@ describe("<hyperframes-slideshow> presenter mode", () => {
 
   it("presenter mode: posts position to channel on controller onChange", async () => {
     const received: unknown[] = [];
-    const listenerChannel = new BroadcastChannel("hf-slideshow");
+    const listenerChannel = new BroadcastChannel(slideshowChannelName());
     listenerChannel.onmessage = (e: MessageEvent) => received.push(e.data);
 
     const { el, triggerChange } = makePresenterEl();
@@ -608,7 +609,7 @@ describe("<hyperframes-slideshow> presenter mode", () => {
     await tick();
 
     const received: unknown[] = [];
-    const spy = new BroadcastChannel("hf-slideshow");
+    const spy = new BroadcastChannel(slideshowChannelName());
     spy.onmessage = (e: MessageEvent) => received.push(e.data);
 
     el.remove(); // triggers disconnectedCallback

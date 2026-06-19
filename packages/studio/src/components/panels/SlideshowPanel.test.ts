@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   toggleMainLineSlide,
   reorderMainLineSlide,
+  reorderBranchSlide,
   setSlideNotes,
   addFragment,
   removeFragment,
@@ -64,6 +65,29 @@ describe("reorderMainLineSlide", () => {
     const input: SlideshowManifest = { slides: [{ sceneId: "a" }] };
     const m = reorderMainLineSlide(input, "z", "up");
     expect(m.slides).toEqual(input.slides);
+  });
+});
+
+// ── reorderBranchSlide ─────────────────────────────────────────────────────
+describe("reorderBranchSlide", () => {
+  const base: SlideshowManifest = {
+    slides: [{ sceneId: "x" }],
+    slideSequences: [
+      { id: "b1", label: "Branch", slides: [{ sceneId: "a" }, { sceneId: "b" }, { sceneId: "c" }] },
+    ],
+  };
+
+  it("moves a branch slide down within its sequence (main line untouched)", () => {
+    const m = reorderBranchSlide(base, "b1", "a", "down");
+    expect(m.slideSequences?.[0].slides.map((s) => s.sceneId)).toEqual(["b", "a", "c"]);
+    expect(m.slides).toEqual(base.slides);
+  });
+
+  it("is a no-op at the boundary and for an unknown branch/scene", () => {
+    expect(reorderBranchSlide(base, "b1", "a", "up").slideSequences?.[0].slides[0].sceneId).toBe(
+      "a",
+    );
+    expect(reorderBranchSlide(base, "nope", "a", "down")).toEqual(base);
   });
 });
 

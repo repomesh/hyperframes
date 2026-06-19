@@ -37,6 +37,11 @@ describe("parseSlideshowManifest", () => {
     expect(() => parseSlideshowManifest(html)).toThrow();
   });
 
+  it("rejects a non-object manifest (e.g. a JSON array)", () => {
+    const html = `<script type="application/hyperframes-slideshow+json">[42, null]</script>`;
+    expect(() => parseSlideshowManifest(html)).toThrow();
+  });
+
   it("throws when a slide entry is malformed (sceneId not a string)", () => {
     const html = `<script type="application/hyperframes-slideshow+json">
       { "slides": [{ "sceneId": 42 }] }
@@ -72,6 +77,18 @@ describe("resolveSlideshow", () => {
     };
     const { errors } = resolveSlideshow(m, SCENES);
     expect(errors.some((e) => e.includes("missing"))).toBe(true);
+  });
+
+  it("flags duplicate slideSequence ids instead of silently overwriting", () => {
+    const m: import("./slideshow.types").SlideshowManifest = {
+      slides: [{ sceneId: "a" }],
+      slideSequences: [
+        { id: "dup", label: "First", slides: [{ sceneId: "c" }] },
+        { id: "dup", label: "Second", slides: [{ sceneId: "c" }] },
+      ],
+    };
+    const { errors } = resolveSlideshow(m, SCENES);
+    expect(errors.some((e) => e.includes("duplicate slideSequence id"))).toBe(true);
   });
 
   it("reports an error for a fragment outside the slide range", () => {
