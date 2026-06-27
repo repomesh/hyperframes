@@ -82,6 +82,7 @@
         "@hyperframes/core": "workspace:*",
         "@hyperframes/engine": "workspace:*",
         "@hyperframes/gcp-cloud-run": "workspace:*",
+        "@hyperframes/lint": "workspace:*",
         "@hyperframes/producer": "workspace:*",
         "@hyperframes/studio": "workspace:*",
         "@types/adm-zip": "^0.5.7",
@@ -104,6 +105,7 @@
       "version": "0.7.13",
       "dependencies": {
         "@chenglou/pretext": "^0.0.5",
+        "@hyperframes/lint": "workspace:*",
         "@hyperframes/parsers": "workspace:*",
         "bpm-detective": "^2.0.5",
         "linkedom": "^0.18.12",
@@ -167,6 +169,22 @@
         "typescript": "^5.7.2",
       },
     },
+    "packages/lint": {
+      "name": "@hyperframes/lint",
+      "version": "0.7.11",
+      "dependencies": {
+        "@hyperframes/core": "workspace:*",
+        "@hyperframes/parsers": "workspace:*",
+        "postcss": "^8.5.8",
+      },
+      "devDependencies": {
+        "@types/node": "^25.0.10",
+        "tsup": "^8.0.0",
+        "tsx": "^4.21.0",
+        "typescript": "^5.0.0",
+        "vitest": "^3.2.4",
+      },
+    },
     "packages/parsers": {
       "name": "@hyperframes/parsers",
       "version": "0.7.11",
@@ -220,6 +238,7 @@
         "@hono/node-server": "^1.13.0",
         "@hyperframes/core": "workspace:^",
         "@hyperframes/engine": "workspace:^",
+        "@hyperframes/lint": "workspace:^",
         "hono": "^4.6.0",
         "linkedom": "^0.18.12",
         "postcss": "^8.4.0",
@@ -684,6 +703,8 @@
     "@hyperframes/engine": ["@hyperframes/engine@workspace:packages/engine"],
 
     "@hyperframes/gcp-cloud-run": ["@hyperframes/gcp-cloud-run@workspace:packages/gcp-cloud-run"],
+
+    "@hyperframes/lint": ["@hyperframes/lint@workspace:packages/lint"],
 
     "@hyperframes/parsers": ["@hyperframes/parsers@workspace:packages/parsers"],
 

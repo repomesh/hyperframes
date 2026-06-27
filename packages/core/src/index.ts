@@ -138,18 +138,15 @@ export {
   MEDIA_DURATION_CLAMP_EPSILON_SECONDS,
 } from "./compiler/timingCompiler";
 
-// Lint
-export type {
-  HyperframeLintSeverity,
-  HyperframeLintFinding,
-  HyperframeLintResult,
-  HyperframeLinterOptions,
-} from "./lint/types";
-export { lintHyperframeHtml } from "./lint/hyperframeLinter";
+// Lint moved to @hyperframes/lint. Import lint APIs from @hyperframes/lint
+// directly, or via the back-compat stub at @hyperframes/core/lint. Not
+// re-exported here — doing so would cycle core's main entry through the lint
+// package (which imports core utilities back).
 export {
   rewriteAssetPaths,
   rewriteAssetPath,
   rewriteCssAssetUrls,
+  rewriteInlineStyleAssetUrls,
 } from "./compiler/rewriteSubCompPaths";
 export { CSS_URL_RE, isNonRelativeUrl, isPathInside } from "./compiler/assetPaths";
 export { queryByAttr } from "./utils/cssSelector";
