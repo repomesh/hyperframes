@@ -1128,6 +1128,12 @@ export const gsapRules: LintRule<LintContext>[] = [
   // them does not integer-snap and does not stutter. We resolve each tween's target to
   // its element(s) and skip the finding only when EVERY target is html-in-canvas; a
   // grouped tween that also touches a plain-DOM element (which does stutter) still fires.
+  //
+  // No suppression by design: there is intentionally no per-line/per-file opt-out (unlike
+  // eslint-disable). The stance is fix-the-motion, not silence-the-rule — a plain-DOM
+  // layout-prop animation always has a faithful transform equivalent (per-glyph x for
+  // spacing, scale for size, x/y for position). An author who has consciously accepted a
+  // stutter still has no flag to flip; that is deliberate, not a missing feature.
   async ({ scripts, tags, source }) => {
     const findings: HyperframeLintFinding[] = [];
 
@@ -1182,6 +1188,10 @@ export const gsapRules: LintRule<LintContext>[] = [
     // they are never html-in-canvas-exempt. (width/height are deliberately omitted: they
     // have legitimate animated uses — progress bars, reveals — and would over-report.)
     const REFLOW_PROPS = ["letterSpacing", "wordSpacing", "fontSize"];
+    // Resolve the parser once, above the loop (the other async rules in this file do the
+    // same); the dynamic-import cache makes per-iteration calls equivalent, but hoisting
+    // keeps the placement from reading as load-bearing.
+    const parseGsapScript = await loadParseGsapScript();
     for (const script of scripts) {
       if (!/gsap\.timeline/.test(script.content)) continue;
 
@@ -1195,7 +1205,6 @@ export const gsapRules: LintRule<LintContext>[] = [
       // those would let real stutter-prone tweens escape. The parser also gives real AST
       // keys, so a nested `{}` value (an onComplete body, modifiers) and a layout-prop
       // name appearing inside a string value can't be misread — both hazards of a raw scan.
-      const parseGsapScript = await loadParseGsapScript();
       const parsed = parseGsapScript(script.content);
       const calls: GsapTransformCall[] = [
         ...parsed.animations.map((anim) => ({
@@ -1215,7 +1224,9 @@ export const gsapRules: LintRule<LintContext>[] = [
       ];
 
       for (const call of calls) {
-        // set() is instantaneous — it never animates, so it cannot stutter.
+        // set() is instantaneous — it never animates, so it cannot stutter. A set() that
+        // seats an integer-snapped layout position (e.g. tl.set("#x",{left:100})) before a
+        // later transform tween is a single from-state frame, not motion; intentionally skipped.
         if (call.method === "set") continue;
         // Object.hasOwn, not `in`: a tween property named `toString`/`constructor` would
         // match the prototype chain and resolve LAYOUT_FIX[p] to an inherited function.
