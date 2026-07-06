@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HF_COLOR_GRADING_ATTR, serializeHfColorGrading } from "../colorGrading";
 import { createColorGradingRuntime, type RuntimeColorGradingApi } from "./colorGrading";

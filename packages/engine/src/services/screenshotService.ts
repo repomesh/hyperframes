@@ -4,6 +4,7 @@
  * BeginFrame-based deterministic screenshot capture and video frame injection.
  */
 
+// fallow-ignore-file code-duplication
 import { type Page } from "puppeteer-core";
 import { type CaptureOptions } from "../types.js";
 import {
@@ -325,6 +326,7 @@ export async function applyDomLayerMask(
   extraHideIds: string[],
 ): Promise<void> {
   await page.evaluate(
+    // fallow-ignore-next-line complexity
     (args: {
       show: string[];
       hide: string[];
@@ -504,6 +506,7 @@ export async function injectVideoFramesBatch(
 ): Promise<string[]> {
   if (updates.length === 0) return [];
   return await page.evaluate(
+    // fallow-ignore-next-line complexity
     async (
       items: Array<{ videoId: string; dataUri: string }>,
       visualProperties: string[],
@@ -684,6 +687,7 @@ export async function syncVideoFrameVisibility(
   activeVideoIds: string[],
 ): Promise<void> {
   await page.evaluate(
+    // fallow-ignore-next-line complexity
     (ids: string[], colorGradingSourceHiddenAttr: string) => {
       // Mirror the ancestor-visibility guard from `injectVideoFramesBatch`.
       // See that copy for the full rationale on why `visibility: hidden` is

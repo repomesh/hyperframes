@@ -1624,6 +1624,7 @@ export function createColorGradingRuntime(): RuntimeColorGradingApi {
     return true;
   };
 
+  // fallow-ignore-next-line complexity
   const getStatus = (
     target: HfColorGradingTarget | string | null | undefined,
   ): RuntimeColorGradingStatus => {
