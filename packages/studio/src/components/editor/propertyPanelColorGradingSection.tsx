@@ -9,11 +9,9 @@ import {
 } from "react";
 import {
   HF_COLOR_GRADING_ATTR,
-  HF_COLOR_GRADING_COLOR_SPACE,
   isHfColorGradingActive,
   normalizeHfColorGrading,
   serializeHfColorGrading,
-  type HfColorGradingAdjustKey,
   type HfColorGradingTarget,
   type NormalizedHfColorGrading,
 } from "@hyperframes/core/color-grading";
@@ -22,27 +20,6 @@ import type { DomEditSelection } from "./domEditing";
 import { ColorGradingControls } from "./propertyPanelColorGradingControls";
 import { Section } from "./propertyPanelPrimitives";
 
-const DEFAULT_ADJUST: Record<HfColorGradingAdjustKey, number> = {
-  exposure: 0,
-  contrast: 0,
-  highlights: 0,
-  shadows: 0,
-  whites: 0,
-  blacks: 0,
-  temperature: 0,
-  tint: 0,
-  saturation: 0,
-};
-
-const DEFAULT_COLOR_GRADING: NormalizedHfColorGrading = {
-  enabled: true,
-  preset: "neutral",
-  intensity: 1,
-  adjust: DEFAULT_ADJUST,
-  lut: null,
-  colorSpace: HF_COLOR_GRADING_COLOR_SPACE,
-};
-
 const COLOR_GRADING_DATA_KEY = HF_COLOR_GRADING_ATTR.replace(/^data-/, "");
 
 interface RuntimeColorGradingStatus {
@@ -50,10 +27,16 @@ interface RuntimeColorGradingStatus {
   message: string;
 }
 
+function defaultColorGrading(): NormalizedHfColorGrading {
+  const grading = normalizeHfColorGrading("neutral");
+  if (!grading) throw new Error("Missing neutral color grading preset");
+  return grading;
+}
+
 function readColorGradingFromElement(element: DomEditSelection): NormalizedHfColorGrading {
   const grading =
     normalizeHfColorGrading(element.dataAttributes[COLOR_GRADING_DATA_KEY]) ??
-    DEFAULT_COLOR_GRADING;
+    defaultColorGrading();
   return { ...grading, intensity: 1 };
 }
 
@@ -330,7 +313,7 @@ export function ColorGradingSection({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              commitColorGrading(DEFAULT_COLOR_GRADING);
+              commitColorGrading(defaultColorGrading());
             }}
             className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-panel-text-4 transition-colors hover:bg-panel-hover hover:text-panel-text-1"
             title="Reset grading"

@@ -222,6 +222,14 @@ function maybeInlineRelativeAssetUrl(urlValue: string, projectDir: string): stri
   return appendSuffixToUrl(dataUrl, suffix);
 }
 
+function warnColorGradingLutNotInlined(lutSrc: string): void {
+  const trimmed = lutSrc.trim();
+  if (!isRelativeUrl(trimmed)) return;
+  console.warn(
+    `[HyperFrames] Could not inline color grading LUT "${trimmed}". The rendered bundle may not be self-contained.`,
+  );
+}
+
 // fallow-ignore-next-line complexity
 function rewriteColorGradingLutWithInlinedAssets(value: string, projectDir: string): string {
   if (!value.trim().startsWith("{")) return value;
@@ -236,7 +244,10 @@ function rewriteColorGradingLutWithInlinedAssets(value: string, projectDir: stri
   const lut = Reflect.get(parsed, "lut");
   if (typeof lut === "string") {
     const inlined = maybeInlineRelativeAssetUrl(lut, projectDir);
-    if (!inlined) return value;
+    if (!inlined) {
+      warnColorGradingLutNotInlined(lut);
+      return value;
+    }
     Reflect.set(parsed, "lut", inlined);
     return JSON.stringify(parsed);
   }
@@ -244,7 +255,10 @@ function rewriteColorGradingLutWithInlinedAssets(value: string, projectDir: stri
   const lutSrc = Reflect.get(lut, "src");
   if (typeof lutSrc !== "string") return value;
   const inlined = maybeInlineRelativeAssetUrl(lutSrc, projectDir);
-  if (!inlined) return value;
+  if (!inlined) {
+    warnColorGradingLutNotInlined(lutSrc);
+    return value;
+  }
   Reflect.set(lut, "src", inlined);
   return JSON.stringify(parsed);
 }
@@ -613,6 +627,12 @@ export interface BundleOptions {
    * modes and emits `<script ... src="<URL>">` directly.
    */
   runtime?: "inline" | "placeholder";
+  /**
+   * Inline .cube LUTs referenced from data-color-grading. Default: true for
+   * self-contained renders/exports. Studio preview disables this so the editor
+   * keeps showing project asset paths instead of giant data URLs.
+   */
+  inlineColorGradingLuts?: boolean;
 }
 
 /**
@@ -980,13 +1000,15 @@ export async function bundleToSingleHtml(
       rewriteCssUrlsWithInlinedAssets(el.getAttribute("style") || "", projectDir),
     );
   }
-  for (const el of [...document.querySelectorAll(`[${HF_COLOR_GRADING_ATTR}]`)]) {
-    const value = el.getAttribute(HF_COLOR_GRADING_ATTR);
-    if (value) {
-      el.setAttribute(
-        HF_COLOR_GRADING_ATTR,
-        rewriteColorGradingLutWithInlinedAssets(value, projectDir),
-      );
+  if (options?.inlineColorGradingLuts !== false) {
+    for (const el of [...document.querySelectorAll(`[${HF_COLOR_GRADING_ATTR}]`)]) {
+      const value = el.getAttribute(HF_COLOR_GRADING_ATTR);
+      if (value) {
+        el.setAttribute(
+          HF_COLOR_GRADING_ATTR,
+          rewriteColorGradingLutWithInlinedAssets(value, projectDir),
+        );
+      }
     }
   }
 

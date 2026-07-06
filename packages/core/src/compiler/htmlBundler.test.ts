@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseHTML } from "linkedom";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { bundleToSingleHtml } from "./htmlBundler";
 import { getHyperframeRuntimeScript } from "../generated/runtime-inline";
 
@@ -962,6 +962,42 @@ describe("bundleToSingleHtml", () => {
 
     expect(lutSrc).toMatch(/^data:text\/plain;base64,/);
     expect(lutSrc).not.toContain("assets/luts/identity.cube");
+  });
+
+  it("can keep data-color-grading LUT paths external for studio preview", async () => {
+    const dir = makeColorGradingProject("assets/luts/identity.cube", {
+      "assets/luts/identity.cube": `LUT_3D_SIZE 2
+0 0 0
+1 0 0
+0 1 0
+1 1 0
+0 0 1
+1 0 1
+0 1 1
+1 1 1`,
+    });
+
+    const bundled = await bundleToSingleHtml(dir, { inlineColorGradingLuts: false });
+    const lutSrc = readBundledColorGradingLutSrc(bundled);
+
+    expect(lutSrc).toBe("assets/luts/identity.cube");
+  });
+
+  it("warns when a render bundle cannot inline a referenced color grading LUT", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const dir = makeColorGradingProject("assets/luts/missing.cube");
+
+      const bundled = await bundleToSingleHtml(dir);
+      const lutSrc = readBundledColorGradingLutSrc(bundled);
+
+      expect(lutSrc).toBe("assets/luts/missing.cube");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Could not inline color grading LUT "assets/luts/missing.cube"'),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("resolves nested CSS @import chains", async () => {
