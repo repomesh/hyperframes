@@ -23,6 +23,7 @@
  */
 import { join, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CHROME_VERSION } from "./manager.js";
 
 // Use `path.join` so the fake paths line up with whatever separator Node's
 // real `path.join` produces in `manager.ts` on the host running the test
@@ -107,7 +108,12 @@ function installFsMocks({ existing, dirs }: FsMockOptions) {
 
 function installPuppeteerBrowsersMock(
   opts: {
-    installedInHfCache?: Array<{ browser: string; executablePath: string; path?: string }>;
+    installedInHfCache?: Array<{
+      browser: string;
+      executablePath: string;
+      path?: string;
+      buildId?: string;
+    }>;
     installedInHfCacheError?: Error;
     installResult?: { executablePath: string };
     installImpl?: () => Promise<{ executablePath: string }>;
@@ -167,13 +173,34 @@ describe("findBrowser — cache resolution", () => {
     // last-resort fallback.
     installFsMocks({ existing: new Set([HF_CACHE, HF_BINARY]) });
     installPuppeteerBrowsersMock({
-      installedInHfCache: [{ browser: "chrome-headless-shell", executablePath: HF_BINARY }],
+      installedInHfCache: [
+        { browser: "chrome-headless-shell", executablePath: HF_BINARY, buildId: CHROME_VERSION },
+      ],
     });
 
     const { findBrowser } = await import("./manager.js");
     const result = await findBrowser();
 
     expect(result).toEqual({ executablePath: HF_BINARY, source: "cache" });
+  });
+
+  it("does not resolve to a hyperframes-cache build from an older CHROME_VERSION pin", async () => {
+    // A build downloaded by a prior hyperframes version (this pin has moved
+    // 131 -> 151 -> 152 across releases) must not satisfy resolution, or an
+    // upgrade silently keeps running a stale build forever instead of ever
+    // fetching the version the new release actually needs (HF#2060 review).
+    installFsMocks({ existing: new Set([HF_CACHE, HF_BINARY, SYSTEM_CHROME]) });
+    installPuppeteerBrowsersMock({
+      installedInHfCache: [
+        { browser: "chrome-headless-shell", executablePath: HF_BINARY, buildId: "131.0.6778.85" },
+      ],
+    });
+
+    const { findBrowser } = await import("./manager.js");
+    const result = await findBrowser();
+
+    expect(result?.executablePath).not.toBe(HF_BINARY);
+    expect(result).toEqual({ executablePath: SYSTEM_CHROME, source: "system" });
   });
 
   it("re-downloads when the hyperframes cache manifest points at a missing binary", async () => {
@@ -191,7 +218,12 @@ describe("findBrowser — cache resolution", () => {
     const paths = installFsMocks({ existing: new Set([HF_CACHE, staleInstallDir]) });
     installPuppeteerBrowsersMock({
       installedInHfCache: [
-        { browser: "chrome-headless-shell", executablePath: HF_BINARY, path: staleInstallDir },
+        {
+          browser: "chrome-headless-shell",
+          executablePath: HF_BINARY,
+          path: staleInstallDir,
+          buildId: CHROME_VERSION,
+        },
       ],
       installResult: { executablePath: redownloadedBinary },
     });

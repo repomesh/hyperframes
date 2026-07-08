@@ -228,7 +228,14 @@ async function findFromHyperframesCache(): Promise<CacheLookupResult> {
     );
     installed = [];
   }
-  const match = installed.find((b) => b.browser === Browser.CHROMEHEADLESSSHELL);
+  // Match on buildId too, not just browser type — an install left over from
+  // an older hyperframes version (this pin has moved 131 → 151 → 152 across
+  // releases) must NOT satisfy resolution, or an upgrade silently keeps
+  // running whatever build happened to be cached instead of ever fetching
+  // the version this release actually needs (HF#2060 review).
+  const match = installed.find(
+    (b) => b.browser === Browser.CHROMEHEADLESSSHELL && b.buildId === CHROME_VERSION,
+  );
   if (match && existsSync(match.executablePath)) {
     return { result: { executablePath: match.executablePath, source: "cache" } };
   }
