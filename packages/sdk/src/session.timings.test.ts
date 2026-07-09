@@ -113,6 +113,46 @@ describe("getElementTimings — GSAP labels", () => {
   });
 });
 
+// ─── getElementTimings — relative data-start references ──────────────────────
+
+/** "intro" starts at data-start=1 for 3s (ends at 4). "outro" starts 2s after intro ends. */
+const RELATIVE_START_HTML = `
+<div data-hf-id="hf-stage" data-hf-root style="width:1280px;height:720px" data-duration="20">
+  <h1 data-hf-id="hf-intro" data-start="1" data-duration="3">Intro</h1>
+  <p  data-hf-id="hf-outro" data-start="hf-intro + 2" data-duration="4">Outro</p>
+  <p  data-hf-id="hf-right-after" data-start="hf-intro" data-duration="1">Right after</p>
+</div>
+`.trim();
+
+describe("getElementTimings — relative data-start references", () => {
+  it("resolves 'ref + offset' against the referenced element's resolved end", async () => {
+    const comp = await openComposition(RELATIVE_START_HTML);
+    const timings = comp.getElementTimings();
+
+    // hf-intro: enterAt=1, exitAt=4
+    expect(timings["hf-intro"]).toMatchObject({ enterAt: 1, exitAt: 4 });
+    // hf-outro: "hf-intro + 2" = intro's exitAt (4) + 2 = 6
+    expect(timings["hf-outro"]).toMatchObject({ enterAt: 6, exitAt: 10 });
+  });
+
+  it("resolves a bare reference (no offset) to the referenced element's exitAt", async () => {
+    const comp = await openComposition(RELATIVE_START_HTML);
+    const timings = comp.getElementTimings();
+    expect(timings["hf-right-after"]).toMatchObject({ enterAt: 4, exitAt: 5 });
+  });
+
+  it("resolves to 0 (not NaN) when the reference target doesn't exist", async () => {
+    const html = `
+      <div data-hf-id="hf-stage" data-hf-root style="width:1280px;height:720px">
+        <p data-hf-id="hf-orphan" data-start="hf-nonexistent + 5" data-duration="2"></p>
+      </div>
+    `.trim();
+    const comp = await openComposition(html);
+    const timings = comp.getElementTimings();
+    expect(timings["hf-orphan"]).toMatchObject({ enterAt: 0, exitAt: 2 });
+  });
+});
+
 // ─── setElementTiming — sparse map + batched dispatch ────────────────────────
 
 describe("setElementTiming", () => {

@@ -461,6 +461,8 @@ export interface Composition {
 
   // ── Query API (F1) ─────────────────────────────────────────────────────────
   getElements(): ElementSnapshot[];
+  /** Top-level elements only, each carrying its full subtree — no id appears twice. */
+  getRootElements(): ElementSnapshot[];
   getElement(id: HfId): ElementSnapshot | null;
   find(query: FindQuery): string[];
   /**

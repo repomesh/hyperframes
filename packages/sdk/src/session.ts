@@ -36,6 +36,8 @@ import type { ParsedDocument } from "./engine/model.js";
 import { applyOp, validateOp, type MutationResult } from "./engine/mutate.js";
 import { getGsapScript, resolveScoped } from "./engine/model.js";
 import { extractGsapLabels } from "@hyperframes/core/gsap-parser-acorn";
+import { stripEmbeddedRuntimeScripts } from "@hyperframes/core/compiler/html-document";
+import { parseStartExpression } from "@hyperframes/core/runtime/start-expression";
 import { serializeDocument } from "./engine/serialize.js";
 import { applyPatchesToDocument, applyOverrideSet } from "./engine/apply-patches.js";
 import { buildPatchEvent, pathToKey } from "./engine/patches.js";
@@ -174,33 +176,61 @@ class CompositionImpl implements Composition {
       this._gsapLabelCache = script ? { script, labels: allLabels } : null;
     }
 
+    // Resolve a `data-start` that's a relative-timing REFERENCE ("intro", "intro + 2" —
+    // parseStartExpression's grammar) into an absolute second, recursively against the
+    // referenced element's own resolved start + duration. A plain numeric data-start keeps
+    // the old parseFloat path unchanged — this only touches the case that used to silently
+    // resolve to 0 (parseFloat("intro + 2") is NaN). Node-safe static counterpart of the
+    // runtime's own resolver (runtime/startResolver.ts): no live GSAP timeline to fall back
+    // on, so an unauthored sub-composition duration still resolves to 0, same as before.
+    const startCache = new Map<Element, number>();
+    const visiting = new Set<Element>();
+    const resolveStart = (el: Element): number => {
+      const cached = startCache.get(el);
+      if (cached !== undefined) return cached;
+      if (visiting.has(el)) return 0; // reference cycle — fail safe, don't loop
+      visiting.add(el);
+      let resolved: number;
+      try {
+        const startStr = el.getAttribute("data-start");
+        const expr = parseStartExpression(startStr);
+        if (expr?.kind === "reference") {
+          const target = resolveScoped(this.parsed.document, expr.refId);
+          resolved = target
+            ? Math.max(0, resolveStart(target) + (resolveDuration(target) ?? 0) + expr.offset)
+            : 0;
+        } else {
+          resolved = startStr !== null ? parseFloat(startStr) : 0;
+        }
+      } finally {
+        visiting.delete(el);
+      }
+      const finite = Number.isFinite(resolved) ? resolved : 0;
+      startCache.set(el, finite);
+      return finite;
+    };
+    // Same preference as handleSetTiming: prefer data-duration, fall back to end - start.
+    const resolveDuration = (el: Element): number | null => {
+      const durationStr = el.getAttribute("data-duration");
+      const durationAttr = durationStr !== null ? parseFloat(durationStr) : null;
+      if (durationAttr !== null && Number.isFinite(durationAttr)) return durationAttr;
+      const endStr = el.getAttribute("data-end");
+      const endAttr = endStr !== null ? parseFloat(endStr) : null;
+      if (endAttr !== null && Number.isFinite(endAttr)) return endAttr - resolveStart(el);
+      return null;
+    };
+
     const result: Record<HfId, ElementTimingSnapshot> = {};
     const elements = this.getElements();
     for (const el of elements) {
       const domEl = resolveScoped(this.parsed.document, el.scopedId);
       if (!domEl) continue;
 
-      const startStr = domEl.getAttribute("data-start");
-      const endStr = domEl.getAttribute("data-end");
-      const durationStr = domEl.getAttribute("data-duration");
+      const enterAt = resolveStart(domEl);
+      const duration = resolveDuration(domEl);
+      if (duration === null) continue; // no timing info — skip non-timed elements
 
-      // Same preference as handleSetTiming: prefer data-duration, fall back to end - start.
-      const start = startStr !== null ? parseFloat(startStr) : 0;
-      const durationAttr = durationStr !== null ? parseFloat(durationStr) : null;
-      const endAttr = endStr !== null ? parseFloat(endStr) : null;
-
-      let duration: number;
-      if (durationAttr !== null && Number.isFinite(durationAttr)) {
-        duration = durationAttr;
-      } else if (endAttr !== null && Number.isFinite(endAttr)) {
-        duration = endAttr - start;
-      } else {
-        // No timing info — skip non-timed elements.
-        continue;
-      }
-
-      const enterAt = Number.isFinite(start) ? start : 0;
-      const exitAt = enterAt + (Number.isFinite(duration) ? duration : 0);
+      const exitAt = enterAt + duration;
 
       // Labels whose position falls within [enterAt, exitAt] (end-inclusive: a
       // label exactly at exitAt is treated as within the element's window).
@@ -305,6 +335,18 @@ class CompositionImpl implements Composition {
     // Walk the live linkedom DOM directly — no serialize/re-parse round trip.
     this.elementsCache ??= flatElements(buildRoots(this.parsed.document));
     return [...this.elementsCache];
+  }
+
+  /**
+   * Top-level elements only (each still carrying its full descendant subtree via
+   * `.children`) — unlike `getElements()`, no element appears twice. Consumers building a
+   * tree view (a layer panel) want this, not `getElements()`: that method's flat list
+   * includes every descendant a second time as its own top-level entry, since each
+   * snapshot in it still carries its children. `buildRoots` already computes true roots
+   * internally for `getElements()` to flatten — this just returns them unflattened.
+   */
+  getRootElements(): ElementSnapshot[] {
+    return buildRoots(this.parsed.document);
   }
 
   getElement(id: HfId): ElementSnapshot | null {
@@ -567,8 +609,13 @@ class CompositionImpl implements Composition {
 
   // ── Serialization ────────────────────────────────────────────────────────────
 
-  serialize(): string {
-    return serializeDocument(this.parsed);
+  serialize(opts?: { stripRuntime?: boolean }): string {
+    const html = serializeDocument(this.parsed);
+    // Newer agent-generated compositions embed hyperframe.runtime.iife.js in their own
+    // HTML. A host driving its own clock (an editing iframe) must not let that runtime
+    // self-init — it races the host's first seek and resets the timeline to t=0. Opt-in
+    // (default false) since a host playing the composition normally wants the runtime.
+    return opts?.stripRuntime ? stripEmbeddedRuntimeScripts(html) : html;
   }
 
   // ── T3 embedded-mode extras ──────────────────────────────────────────────────
