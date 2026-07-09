@@ -24,9 +24,9 @@ import {
   patchIframeDomTiming,
   persistTimelineEdit,
   readFileContent,
+  foldedShiftGsapMutation,
+  foldedScaleGsapMutation,
   formatTimelineAttributeNumber,
-  shiftGsapPositions,
-  scaleGsapPositions,
   finishTimelineTimingFallback,
   extendRootDurationIfNeeded,
   buildTimelineMoveTimingPatch,
@@ -132,7 +132,6 @@ export function useTimelineEditing({
     writeProjectFile,
   });
 
-  // fallow-ignore-next-line complexity
   const handleTimelineElementMove = useCallback(
     // fallow-ignore-next-line complexity
     (element: TimelineElement, updates: TimelineMoveUpdates) => {
@@ -172,7 +171,15 @@ export function useTimelineEditing({
             reloadPreview,
             gsapMutation:
               delta !== 0 && domId && pid
-                ? () => shiftGsapPositions(pid, targetPath, domId, delta)
+                ? foldedShiftGsapMutation({
+                    projectId: pid,
+                    targetPath,
+                    domId,
+                    delta,
+                    label: "Move timeline clip",
+                    coalesceKey,
+                    recordEdit,
+                  })
                 : undefined,
             onGsapError: (err) => console.error("[Timeline] Failed to shift GSAP positions", err),
           });
@@ -217,7 +224,6 @@ export function useTimelineEditing({
     ],
   );
 
-  // fallow-ignore-next-line complexity
   const handleTimelineElementResize = useCallback(
     // fallow-ignore-next-line complexity
     (
@@ -264,16 +270,16 @@ export function useTimelineEditing({
             reloadPreview,
             gsapMutation:
               timingChanged && domId && pid
-                ? () =>
-                    scaleGsapPositions(
-                      pid,
-                      targetPath,
-                      domId,
-                      element.start,
-                      element.duration,
-                      updates.start,
-                      updates.duration,
-                    )
+                ? foldedScaleGsapMutation({
+                    projectId: pid,
+                    targetPath,
+                    domId,
+                    from: { start: element.start, duration: element.duration },
+                    to: { start: updates.start, duration: updates.duration },
+                    label: "Resize timeline clip",
+                    coalesceKey,
+                    recordEdit,
+                  })
                 : undefined,
             onGsapError: (err) => console.error("[Timeline] Failed to scale GSAP positions", err),
           });

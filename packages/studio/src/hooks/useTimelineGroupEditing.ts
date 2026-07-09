@@ -7,6 +7,7 @@ import {
   buildTimelineResizeTimingPatch,
   extendRootDurationIfNeeded,
   finishTimelineTimingFallback,
+  foldGsapMutationIntoHistory,
   formatTimelineAttributeNumber,
   patchIframeDomTiming,
   persistTimelineBatchEdit,
@@ -202,22 +203,30 @@ export function useTimelineGroupEditing({
           needsExtension,
           rootDurationSeconds: maxEnd,
           reloadPreview,
-          gsapMutation: async () => {
-            let mutated = false;
-            for (const change of changes) {
-              const delta = change.start - change.element.start;
-              const domId = change.element.domId;
-              if (delta === 0 || !domId) continue;
-              const status = await shiftGsapPositions(
-                projectId,
-                targetPathFor(change.element, activeCompPath),
-                domId,
-                delta,
-              );
-              mutated = mutated || status.mutated;
-            }
-            return { mutated };
-          },
+          gsapMutation: () =>
+            foldGsapMutationIntoHistory({
+              projectId,
+              paths: changes.map((change) => targetPathFor(change.element, activeCompPath)),
+              label: "Move timeline clips",
+              coalesceKey,
+              recordEdit,
+              gsapMutation: async () => {
+                let mutated = false;
+                for (const change of changes) {
+                  const delta = change.start - change.element.start;
+                  const domId = change.element.domId;
+                  if (delta === 0 || !domId) continue;
+                  const status = await shiftGsapPositions(
+                    projectId,
+                    targetPathFor(change.element, activeCompPath),
+                    domId,
+                    delta,
+                  );
+                  mutated = mutated || status.mutated;
+                }
+                return { mutated };
+              },
+            }),
           onGsapError: (err) => console.error("[Timeline] Failed to shift GSAP positions", err),
         });
       });
@@ -310,27 +319,35 @@ export function useTimelineGroupEditing({
           needsExtension,
           rootDurationSeconds: maxEnd,
           reloadPreview,
-          gsapMutation: async () => {
-            let mutated = false;
-            for (const change of changes) {
-              const domId = change.element.domId;
-              const timingChanged =
-                change.start !== change.element.start ||
-                change.duration !== change.element.duration;
-              if (!timingChanged || !domId) continue;
-              const status = await scaleGsapPositions(
-                projectId,
-                targetPathFor(change.element, activeCompPath),
-                domId,
-                change.element.start,
-                change.element.duration,
-                change.start,
-                change.duration,
-              );
-              mutated = mutated || status.mutated;
-            }
-            return { mutated };
-          },
+          gsapMutation: () =>
+            foldGsapMutationIntoHistory({
+              projectId,
+              paths: changes.map((change) => targetPathFor(change.element, activeCompPath)),
+              label: "Resize timeline clips",
+              coalesceKey,
+              recordEdit,
+              gsapMutation: async () => {
+                let mutated = false;
+                for (const change of changes) {
+                  const domId = change.element.domId;
+                  const timingChanged =
+                    change.start !== change.element.start ||
+                    change.duration !== change.element.duration;
+                  if (!timingChanged || !domId) continue;
+                  const status = await scaleGsapPositions(
+                    projectId,
+                    targetPathFor(change.element, activeCompPath),
+                    domId,
+                    change.element.start,
+                    change.element.duration,
+                    change.start,
+                    change.duration,
+                  );
+                  mutated = mutated || status.mutated;
+                }
+                return { mutated };
+              },
+            }),
           onGsapError: (err) => console.error("[Timeline] Failed to scale GSAP positions", err),
         });
       });

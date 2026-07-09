@@ -123,6 +123,8 @@ export interface RecordEditInput {
   label: string;
   kind: EditHistoryKind;
   coalesceKey?: string;
+  /** Per-entry coalesce window override (ms); lets a slow follow-up still merge. */
+  coalesceMs?: number;
   files: Record<string, { before: string; after: string }>;
 }
 
@@ -430,6 +432,53 @@ export async function finishTimelineTimingFallback(input: {
   input.reloadPreview();
 }
 
+// Coalesce window for folding a GSAP mutation into the preceding timing edit; only has to
+// outlast one GSAP server round-trip, never a real second edit.
+const GSAP_HISTORY_COALESCE_MS = 10_000;
+
+/**
+ * A server GSAP rewrite mutates the same file the timing patch just wrote, but AFTER the
+ * timing edit was recorded, leaving the recorded `after` stale so an undo hits a hash
+ * conflict. This snapshots every touched file, runs the mutation, then records a follow-up
+ * edit under the same coalesceKey with a window wide enough to survive the GSAP round-trip,
+ * folding both writes into one undo step. Returns the mutation status for caller reloads.
+ */
+export async function foldGsapMutationIntoHistory(input: {
+  projectId: string;
+  paths: string[];
+  label: string;
+  coalesceKey?: string;
+  recordEdit: (edit: RecordEditInput) => Promise<void>;
+  gsapMutation: () => Promise<GsapMutationStatus>;
+}): Promise<GsapMutationStatus> {
+  const uniquePaths = [...new Set(input.paths)];
+  const before = new Map<string, string>();
+  for (const path of uniquePaths) {
+    before.set(path, await readFileContent(input.projectId, path));
+  }
+  const status = await input.gsapMutation();
+  if (status.mutated) {
+    const files: Record<string, { before: string; after: string }> = {};
+    for (const path of uniquePaths) {
+      const priorContent = before.get(path);
+      const finalContent = await readFileContent(input.projectId, path);
+      if (priorContent !== undefined && finalContent !== priorContent) {
+        files[path] = { before: priorContent, after: finalContent };
+      }
+    }
+    if (Object.keys(files).length > 0) {
+      await input.recordEdit({
+        label: input.label,
+        kind: "timeline",
+        coalesceKey: input.coalesceKey,
+        coalesceMs: GSAP_HISTORY_COALESCE_MS,
+        files,
+      });
+    }
+  }
+  return status;
+}
+
 /**
  * Shift all GSAP animation positions targeting a given element by a time delta.
  * Calls the server-side GSAP mutation endpoint which uses the AST-based parser.
@@ -491,6 +540,59 @@ export async function scaleGsapPositions(
     throw new Error(readMutationError(err, "scale-positions failed"));
   }
   return readMutationStatus(await res.json().catch(() => null));
+}
+
+/** Single-clip move GSAP shift, folded into the timing edit's history entry (see above). */
+export function foldedShiftGsapMutation(input: {
+  projectId: string;
+  targetPath: string;
+  domId: string;
+  delta: number;
+  label: string;
+  coalesceKey?: string;
+  recordEdit: (edit: RecordEditInput) => Promise<void>;
+}): () => Promise<GsapMutationStatus> {
+  return () =>
+    foldGsapMutationIntoHistory({
+      projectId: input.projectId,
+      paths: [input.targetPath],
+      label: input.label,
+      coalesceKey: input.coalesceKey,
+      recordEdit: input.recordEdit,
+      gsapMutation: () =>
+        shiftGsapPositions(input.projectId, input.targetPath, input.domId, input.delta),
+    });
+}
+
+/** Single-clip resize GSAP scale, folded into the timing edit's history entry (see above). */
+export function foldedScaleGsapMutation(input: {
+  projectId: string;
+  targetPath: string;
+  domId: string;
+  from: { start: number; duration: number };
+  to: { start: number; duration: number };
+  label: string;
+  coalesceKey?: string;
+  recordEdit: (edit: RecordEditInput) => Promise<void>;
+}): () => Promise<GsapMutationStatus> {
+  return () =>
+    foldGsapMutationIntoHistory({
+      projectId: input.projectId,
+      paths: [input.targetPath],
+      label: input.label,
+      coalesceKey: input.coalesceKey,
+      recordEdit: input.recordEdit,
+      gsapMutation: () =>
+        scaleGsapPositions(
+          input.projectId,
+          input.targetPath,
+          input.domId,
+          input.from.start,
+          input.from.duration,
+          input.to.start,
+          input.to.duration,
+        ),
+    });
 }
 
 // Re-export applyPatchByTarget for use in the hook (avoids double import in callers)
