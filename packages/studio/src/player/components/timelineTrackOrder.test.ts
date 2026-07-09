@@ -34,14 +34,27 @@ function rowIds(rows: readonly { elements: readonly TimelineElement[] }[]): stri
 }
 
 describe("buildStackingTimelineLayers", () => {
-  it("packs non-overlapping clips into the same lane even when their z-index differs", () => {
+  it("splits non-overlapping clips into separate lanes when their z-index differs", () => {
+    // A lane is a z-band: differing z must land on different rows even when the
+    // clips don't overlap in time, so a vertical (z) restack actually moves the
+    // clip's row. Rows are ordered by descending z.
     const result = buildStackingTimelineLayers([
       rowElement({ id: "back", zIndex: 1, start: 0, duration: 1 }),
       rowElement({ id: "front", zIndex: 10, start: 1, duration: 1 }),
     ]);
 
-    expect(rowIds(result.visualLayers)).toEqual([["back", "front"]]);
+    expect(rowIds(result.visualLayers)).toEqual([["front"], ["back"]]);
     expect(result.visualLayers[0]?.zIndex).toBe(10);
+  });
+
+  it("packs non-overlapping clips into one lane when they share a z-index", () => {
+    const result = buildStackingTimelineLayers([
+      rowElement({ id: "back", zIndex: 5, start: 0, duration: 1 }),
+      rowElement({ id: "front", zIndex: 5, start: 1, duration: 1 }),
+    ]);
+
+    expect(rowIds(result.visualLayers)).toEqual([["back", "front"]]);
+    expect(result.visualLayers[0]?.zIndex).toBe(5);
   });
 
   it("splits clips into separate lanes when they overlap in time", () => {

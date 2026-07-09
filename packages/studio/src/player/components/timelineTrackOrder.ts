@@ -78,8 +78,13 @@ function getOrderedContextKeys(items: readonly TimelineLayerOrderItem[]): string
 }
 
 function canJoinLayer(layer: BuildLayer, item: TimelineLayerOrderItem): boolean {
+  // A row IS a z-band: clips only share a lane when they carry the same z-index
+  // (and don't overlap in time). Without the z-index gate a non-overlapping clip
+  // greedily packs into the first time-compatible row — the topmost one — so a
+  // vertical restack changes z but the row never follows it.
   return (
     layer.contextKey === resolveStackingContextKey(item) &&
+    layer.zIndex === item.zIndex &&
     layer.elements.every((element) => !timelineElementsOverlap(element, item.element))
   );
 }
