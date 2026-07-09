@@ -106,20 +106,85 @@ describe("variables", () => {
 });
 
 describe("error mapping", () => {
-  it("maps 429 to RATE_LIMITED and 401 to BAD_TOKEN", async () => {
+  it("maps 429 to RATE_LIMITED (after retries) and 401 to BAD_TOKEN", async () => {
+    const stub = fetchStub(() => jsonResponse(429, {}));
     const c429 = createFigmaClient({
       token: "t",
-      fetch: fetchStub(() => jsonResponse(429, {})).fetch,
+      fetch: stub.fetch,
+      sleep: () => Promise.resolve(),
     });
     await expect(c429.styles("F")).rejects.toThrowError(
       expect.objectContaining({ code: "RATE_LIMITED" }),
     );
+    // 1 initial + 3 retries = 4 attempts
+    expect(stub.calls).toHaveLength(4);
     const c401 = createFigmaClient({
       token: "t",
       fetch: fetchStub(() => jsonResponse(401, {})).fetch,
     });
     await expect(c401.styles("F")).rejects.toThrowError(
       expect.objectContaining({ code: "BAD_TOKEN" }),
+    );
+  });
+
+  it("retries 429 and succeeds when the limit clears", async () => {
+    let n = 0;
+    const waits: number[] = [];
+    const client = createFigmaClient({
+      token: "t",
+      fetch: (() => {
+        n += 1;
+        return Promise.resolve(
+          n < 3
+            ? jsonResponse(429, {})
+            : jsonResponse(200, {
+                meta: { styles: [{ key: "k", name: "P", style_type: "FILL" }] },
+              }),
+        );
+      }) as FigmaFetch,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    const styles = await client.styles("F");
+    expect(styles[0]?.key).toBe("k");
+    expect(n).toBe(3); // two 429s then success
+    expect(waits).toEqual([1000, 2000]); // exponential backoff
+  });
+
+  it("honors Retry-After (seconds) over the backoff default", async () => {
+    let n = 0;
+    const waits: number[] = [];
+    const client = createFigmaClient({
+      token: "t",
+      fetch: (() => {
+        n += 1;
+        return Promise.resolve(
+          n === 1
+            ? new Response("{}", { status: 429, headers: { "retry-after": "5" } })
+            : jsonResponse(200, { meta: { styles: [] } }),
+        );
+      }) as FigmaFetch,
+      sleep: (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      },
+    });
+    await client.styles("F");
+    expect(waits).toEqual([5000]);
+  });
+
+  it("names the library_content scope in the styles 403 message", async () => {
+    const client = createFigmaClient({
+      token: "t",
+      fetch: fetchStub(() => jsonResponse(403, { message: "no" })).fetch,
+    });
+    await expect(client.styles("F")).rejects.toThrowError(
+      expect.objectContaining({
+        code: "FORBIDDEN",
+        message: expect.stringContaining("library_content:read"),
+      }),
     );
   });
 
