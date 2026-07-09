@@ -44,7 +44,15 @@ const minMotion = Number(arg("min-motion-psnr", "15"));
 
 const ffprobe = (file) =>
   Number(
-    execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file])
+    execFileSync("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "csv=p=0",
+      file,
+    ])
       .toString()
       .trim(),
   );
@@ -52,14 +60,30 @@ const refDur = ffprobe(reference);
 const renderDur = ffprobe(render);
 const end = Math.min(refDur, renderDur) - interval - 0.01;
 
-const dims = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v", "-show_entries", "stream=width,height", "-of", "csv=p=0", reference])
-  .toString().trim().split(",").map(Number);
+const dims = execFileSync("ffprobe", [
+  "-v",
+  "error",
+  "-select_streams",
+  "v",
+  "-show_entries",
+  "stream=width,height",
+  "-of",
+  "csv=p=0",
+  reference,
+])
+  .toString()
+  .trim()
+  .split(",")
+  .map(Number);
 const [rw, rh] = dims;
 
 let cropFilter = "";
 if (crop) {
   const m = crop.match(/^(\d+)x(\d+)\+(\d+)\+(\d+)$/);
-  if (!m) { console.error("bad --crop, expected WxH+X+Y"); process.exit(2); }
+  if (!m) {
+    console.error("bad --crop, expected WxH+X+Y");
+    process.exit(2);
+  }
   cropFilter = `crop=${m[1]}:${m[2]}:${m[3]}:${m[4]},`;
 }
 
@@ -70,10 +94,23 @@ const frame = (src, t, vf, dst) => {
   execFileSync("ffmpeg", args.concat(dst));
 };
 const diff = (a, b, dst) =>
-  execFileSync("ffmpeg", ["-y", "-v", "error", "-i", a, "-i", b, "-filter_complex", "blend=all_mode=difference", dst]);
+  execFileSync("ffmpeg", [
+    "-y",
+    "-v",
+    "error",
+    "-i",
+    a,
+    "-i",
+    b,
+    "-filter_complex",
+    "blend=all_mode=difference",
+    dst,
+  ]);
 const psnr = (a, b) => {
   // spawnSync with array args (no shell): psnr stats land on stderr
-  const r = spawnSync("ffmpeg", ["-i", a, "-i", b, "-lavfi", "psnr", "-f", "null", "-"], { encoding: "utf8" });
+  const r = spawnSync("ffmpeg", ["-i", a, "-i", b, "-lavfi", "psnr", "-f", "null", "-"], {
+    encoding: "utf8",
+  });
   const m = (r.stderr || "").match(/average:([\d.]+|inf)/);
   return m ? (m[1] === "inf" ? 99 : Number(m[1])) : NaN;
 };
@@ -88,7 +125,11 @@ for (let t = 0; t <= end; t = Math.round((t + interval) * 1000) / 1000) {
   frame(render, t1, renderVf, join(dir, "ob.png"));
   diff(join(dir, "ra.png"), join(dir, "rb.png"), join(dir, "rd.png"));
   diff(join(dir, "oa.png"), join(dir, "ob.png"), join(dir, "od.png"));
-  results.push({ t, motion: psnr(join(dir, "rd.png"), join(dir, "od.png")), abs: psnr(join(dir, "rb.png"), join(dir, "ob.png")) });
+  results.push({
+    t,
+    motion: psnr(join(dir, "rd.png"), join(dir, "od.png")),
+    abs: psnr(join(dir, "rb.png"), join(dir, "ob.png")),
+  });
 }
 rmSync(dir, { recursive: true, force: true });
 
@@ -98,9 +139,13 @@ for (const r of results)
   console.log(
     `window ${r.t.toFixed(2)}s→${(r.t + interval).toFixed(2)}s  motion-psnr=${r.motion.toFixed(2)}dB  (abs=${r.abs.toFixed(1)}dB)${r.motion < minMotion ? "  <-- BELOW THRESHOLD" : ""}`,
   );
-console.log(`\nwindows=${results.length} min-motion=${min.toFixed(2)}dB mean-motion=${mean.toFixed(2)}dB threshold=${minMotion}dB`);
+console.log(
+  `\nwindows=${results.length} min-motion=${min.toFixed(2)}dB mean-motion=${mean.toFixed(2)}dB threshold=${minMotion}dB`,
+);
 if (min < minMotion) {
-  console.log("VERDICT: FAIL — choreography diverges from the Figma export (check timings, invented keyframes, durations)");
+  console.log(
+    "VERDICT: FAIL — choreography diverges from the Figma export (check timings, invented keyframes, durations)",
+  );
   process.exit(1);
 }
 console.log("VERDICT: PASS — motion matches the Figma export within the static-fidelity ceiling");
