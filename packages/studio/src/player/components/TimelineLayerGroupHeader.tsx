@@ -46,7 +46,11 @@ export function TimelineLayerGroupHeader({
       className="relative"
       style={{
         height: TIMELINE_LAYER_GROUP_HEADER_H,
-        width: GUTTER + trackContentWidth,
+        // Fill the full canvas width (min 100% of the panel) so the context
+        // header spans the timeline at any zoom; minWidth preserves the intrinsic
+        // composition width when zoomed in and scrolling.
+        width: "100%",
+        minWidth: GUTTER + trackContentWidth,
         background: theme.gutterBackground,
         borderBottom: `1px solid ${theme.rowBorder}`,
       }}

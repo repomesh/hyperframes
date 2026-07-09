@@ -79,13 +79,15 @@ export const TimelineRuler = memo(function TimelineRuler({
           })}
       </svg>
 
-      {/* Ruler */}
+      {/* Ruler. The bar fills the full panel width (canvas is min 100% wide);
+          calc(100% - GUTTER) equals trackContentWidth when zoomed in and extends
+          past the content when zoomed out. Ticks stay at composition coordinates. */}
       <div
         className="relative overflow-hidden"
         style={{
           height: RULER_H,
           marginLeft: GUTTER,
-          width: trackContentWidth,
+          width: `calc(100% - ${GUTTER}px)`,
           background: theme.gutterBackground,
           borderBottom: `1px solid ${theme.rulerBorder}`,
         }}

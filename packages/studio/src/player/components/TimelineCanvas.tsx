@@ -204,7 +204,12 @@ export const TimelineCanvas = memo(function TimelineCanvas({
     draggedClip?.started === true ? (draggedClip.previewStackingReorder?.placement ?? null) : null;
 
   return (
-    <div className="relative" style={{ height: totalH, width: GUTTER + trackContentWidth }}>
+    // minWidth:100% makes the lanes and ruler fill the panel when the composition
+    // is narrower than the viewport (zoomed out); content stays in time coords.
+    <div
+      className="relative"
+      style={{ height: totalH, width: GUTTER + trackContentWidth, minWidth: "100%" }}
+    >
       <TimelineRuler
         major={major}
         minor={minor}
