@@ -75,6 +75,12 @@ export interface HyperframesConfig {
    * `maybeEnableDeParallelRouterTrial`/`maybeConsumeDeParallelRouterTrial`.
    */
   deParallelRouterTrialFired?: boolean;
+  /**
+   * Count of engaged (routed or reverted) trial renders so far — the
+   * backstop that caps exposure even absent an actual failure. See
+   * `DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS` in `render.ts`.
+   */
+  deParallelRouterTrialRenderCount?: number;
 }
 
 const DEFAULT_CONFIG: HyperframesConfig = {
@@ -120,7 +126,16 @@ export function readConfig(): HyperframesConfig {
       skillsUpdateAvailable: parsed.skillsUpdateAvailable,
       skillsOutdatedCount: parsed.skillsOutdatedCount,
       skillsMissingCount: parsed.skillsMissingCount,
-      deParallelRouterTrialFired: parsed.deParallelRouterTrialFired,
+      // Explicit `=== true`/typeof-number checks rather than a truthy/nullish
+      // read — a hand-edited or corrupted config could plausibly carry a
+      // non-boolean/non-number JSON value (e.g. the STRING "false", which is
+      // truthy in JS) for these two fields specifically, since they're read
+      // with a bare truthy check at the call site (review finding).
+      deParallelRouterTrialFired: parsed.deParallelRouterTrialFired === true ? true : undefined,
+      deParallelRouterTrialRenderCount:
+        typeof parsed.deParallelRouterTrialRenderCount === "number"
+          ? parsed.deParallelRouterTrialRenderCount
+          : undefined,
     };
 
     cachedConfig = config;
@@ -131,6 +146,19 @@ export function readConfig(): HyperframesConfig {
     writeConfig(config);
     return config;
   }
+}
+
+/**
+ * Re-read the config from disk, bypassing the in-process cache. Use
+ * immediately before a targeted single-field read-modify-write (e.g. the DE
+ * parallel-router trial's render count/fired flag) to narrow — though not
+ * eliminate, there is no cross-process file locking here — the window for a
+ * lost update against a concurrently-running CLI process that wrote other
+ * fields in the meantime.
+ */
+export function readConfigFresh(): HyperframesConfig {
+  cachedConfig = null;
+  return readConfig();
 }
 
 /**

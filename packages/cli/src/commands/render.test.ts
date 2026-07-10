@@ -18,6 +18,14 @@ const configState = vi.hoisted(() => ({
   writeConfigCalls: [] as Array<Record<string, unknown>>,
 }));
 
+const trackingState = vi.hoisted(() => ({
+  // maybeEnableDeParallelRouterTrial gates on the real shouldTrack(), which
+  // (via isDevMode()) always returns false when this file itself runs as
+  // `.ts` source under vitest — mocked here so the CLI-trial tests can
+  // control it directly instead of inheriting that environment quirk.
+  shouldTrack: true,
+}));
+
 const preflightState = vi.hoisted(() => ({
   result: {
     outcomes: [
@@ -59,10 +67,15 @@ vi.mock("../utils/producer.js", () => ({
 
 vi.mock("../telemetry/config.js", () => ({
   readConfig: vi.fn(() => ({ ...configState.config })),
+  readConfigFresh: vi.fn(() => ({ ...configState.config })),
   writeConfig: vi.fn((config: Record<string, unknown>) => {
     configState.config = { ...config };
     configState.writeConfigCalls.push({ ...config });
   }),
+}));
+
+vi.mock("../telemetry/client.js", () => ({
+  shouldTrack: vi.fn(() => trackingState.shouldTrack),
 }));
 
 vi.mock("../telemetry/events.js", () => ({
@@ -88,9 +101,14 @@ describe("renderLocal browser GPU config", () => {
   // suites). Importing once in `beforeAll` keeps every test fast and isolated.
   let renderLocal: typeof import("./render.js").renderLocal;
   let resolveBrowserGpuForCli: typeof import("./render.js").resolveBrowserGpuForCli;
+  let resetTrialState: typeof import("./render.js").__resetDeParallelRouterTrialStateForTests;
 
   beforeAll(async () => {
-    ({ renderLocal, resolveBrowserGpuForCli } = await import("./render.js"));
+    ({
+      renderLocal,
+      resolveBrowserGpuForCli,
+      __resetDeParallelRouterTrialStateForTests: resetTrialState,
+    } = await import("./render.js"));
   });
 
   function setEnv(key: string, value: string) {
@@ -104,6 +122,8 @@ describe("renderLocal browser GPU config", () => {
     producerState.executeImpl = async () => undefined;
     configState.config = { telemetryEnabled: true, deParallelRouterTrialFired: true };
     configState.writeConfigCalls = [];
+    trackingState.shouldTrack = true;
+    resetTrialState();
     savedEnv.clear();
     savedEnv.set("HYPERFRAMES_FFMPEG_PATH", process.env.HYPERFRAMES_FFMPEG_PATH);
     savedEnv.set("HYPERFRAMES_FFPROBE_PATH", process.env.HYPERFRAMES_FFPROBE_PATH);
@@ -441,16 +461,24 @@ describe("renderLocal browser GPU config", () => {
 
 describe("renderLocal — DE parallel-router CLI trial", () => {
   let renderLocal: typeof import("./render.js").renderLocal;
+  let resetTrialState: typeof import("./render.js").__resetDeParallelRouterTrialStateForTests;
   const savedEnv = new Map<string, string | undefined>();
 
   beforeAll(async () => {
-    ({ renderLocal } = await import("./render.js"));
+    ({ renderLocal, __resetDeParallelRouterTrialStateForTests: resetTrialState } =
+      await import("./render.js"));
   });
 
   beforeEach(() => {
     producerState.createdJobs = [];
     producerState.executeImpl = async () => undefined;
     configState.writeConfigCalls = [];
+    trackingState.shouldTrack = true;
+    // The "managed by us" flag lives at module scope in render.ts (real CLI
+    // processes only ever run one --batch sequence, so it never needs
+    // resetting there) — reset explicitly here so tests don't leak arm/
+    // consume state into each other via shared module instance + test order.
+    resetTrialState();
     savedEnv.clear();
     savedEnv.set("HF_DE_PARALLEL_ROUTER", process.env.HF_DE_PARALLEL_ROUTER);
     savedEnv.set("HYPERFRAMES_FFMPEG_PATH", process.env.HYPERFRAMES_FFMPEG_PATH);
@@ -499,8 +527,9 @@ describe("renderLocal — DE parallel-router CLI trial", () => {
     expect(process.env.HF_DE_PARALLEL_ROUTER).toBeUndefined();
   });
 
-  it("does not enable the trial when telemetry is disabled", async () => {
-    configState.config = { telemetryEnabled: false, deParallelRouterTrialFired: false };
+  it("does not enable the trial when telemetry isn't actually trackable (shouldTrack() false — dev mode / DO_NOT_TRACK / disabled)", async () => {
+    configState.config = { telemetryEnabled: true, deParallelRouterTrialFired: false };
+    trackingState.shouldTrack = false;
     await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
     expect(process.env.HF_DE_PARALLEL_ROUTER).toBeUndefined();
   });
@@ -514,7 +543,14 @@ describe("renderLocal — DE parallel-router CLI trial", () => {
       };
     };
     await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
-    expect(configState.writeConfigCalls).toHaveLength(0);
+    // A write DOES happen — the render-count backstop is tracked on every
+    // engaged render — but it must not flip deParallelRouterTrialFired.
+    expect(configState.writeConfigCalls).toContainEqual(
+      expect.objectContaining({
+        deParallelRouterTrialFired: false,
+        deParallelRouterTrialRenderCount: 1,
+      }),
+    );
   });
 
   it("persists the trial as fired when the router's own safety net actually reverted", async () => {
@@ -549,7 +585,15 @@ describe("renderLocal — DE parallel-router CLI trial", () => {
     await renderLocal("/tmp/project", "/tmp/out.mp4", { ...baseOptions, throwOnError: true }).catch(
       () => {},
     );
-    expect(configState.writeConfigCalls).toHaveLength(0);
+    // Still counts toward the render-count backstop (the router DID engage),
+    // but must not flip deParallelRouterTrialFired — the crash wasn't the
+    // router's own safety net firing.
+    expect(configState.writeConfigCalls).toContainEqual(
+      expect.objectContaining({
+        deParallelRouterTrialFired: false,
+        deParallelRouterTrialRenderCount: 1,
+      }),
+    );
   });
 
   it("persists the trial as fired from the failure path when the router's safety net reverted but the retry still failed", async () => {
@@ -564,6 +608,83 @@ describe("renderLocal — DE parallel-router CLI trial", () => {
     expect(configState.writeConfigCalls).toContainEqual(
       expect.objectContaining({ deParallelRouterTrialFired: true }),
     );
+  });
+
+  it("persists a later --batch row's revert even though this process already armed the trial on an earlier row", async () => {
+    // Regression test for the exact scenario a --batch run hits: multiple
+    // renderLocal calls in one process. Before the fix, row 2's
+    // maybeEnableDeParallelRouterTrial saw process.env.HF_DE_PARALLEL_ROUTER
+    // already "true" (set by row 1) and mistook that for "the user set it",
+    // returning trialArmed=false — silently dropping row 2's revert.
+    configState.config = { telemetryEnabled: true, deParallelRouterTrialFired: false };
+
+    producerState.executeImpl = async (job) => {
+      job.perfSummary = {
+        resolution: { width: 100, height: 100 },
+        drawElement: { parallelRouter: "routed" },
+      };
+    };
+    await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBe("true");
+    expect(configState.config.deParallelRouterTrialFired).toBe(false);
+
+    producerState.executeImpl = async (job) => {
+      job.perfSummary = {
+        resolution: { width: 100, height: 100 },
+        drawElement: { parallelRouter: "reverted" },
+      };
+    };
+    await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+
+    expect(configState.writeConfigCalls).toContainEqual(
+      expect.objectContaining({ deParallelRouterTrialFired: true }),
+    );
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBeUndefined();
+  });
+
+  it("does not override an env var the user set between two renders in the same process", async () => {
+    configState.config = { telemetryEnabled: true, deParallelRouterTrialFired: false };
+    producerState.executeImpl = async (job) => {
+      job.perfSummary = {
+        resolution: { width: 100, height: 100 },
+        drawElement: { parallelRouter: "routed" },
+      };
+    };
+    await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBe("true");
+
+    // A real interactive user can't do this mid-batch, but a wrapper script
+    // invoking the CLI programmatically in the same process could — the
+    // explicit override must still win on the next call.
+    process.env.HF_DE_PARALLEL_ROUTER = "false";
+    await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBe("false");
+  });
+
+  it("caps exposure at DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS even when the router never reverts", async () => {
+    configState.config = { telemetryEnabled: true, deParallelRouterTrialFired: false };
+    producerState.executeImpl = async (job) => {
+      job.perfSummary = {
+        resolution: { width: 100, height: 100 },
+        drawElement: { parallelRouter: "routed" },
+      };
+    };
+
+    for (let i = 0; i < 25; i++) {
+      await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+    }
+
+    expect(configState.writeConfigCalls).toContainEqual(
+      expect.objectContaining({
+        deParallelRouterTrialFired: true,
+        deParallelRouterTrialRenderCount: 25,
+      }),
+    );
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBeUndefined();
+
+    // The 26th eligible render must not re-arm it.
+    await renderLocal("/tmp/project", "/tmp/out.mp4", baseOptions);
+    expect(process.env.HF_DE_PARALLEL_ROUTER).toBeUndefined();
   });
 });
 

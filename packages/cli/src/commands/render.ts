@@ -66,7 +66,13 @@ import {
   trackRenderPreflightRejected,
 } from "../telemetry/events.js";
 import { maybePromptRenderFeedback } from "../telemetry/feedback.js";
-import { readConfig, writeConfig } from "../telemetry/config.js";
+import {
+  readConfig,
+  readConfigFresh,
+  writeConfig,
+  type HyperframesConfig,
+} from "../telemetry/config.js";
+import { shouldTrack } from "../telemetry/client.js";
 import { renderJobObservabilityTelemetryPayload } from "../telemetry/renderObservability.js";
 import { normalizeSkillSlug } from "../telemetry/skill.js";
 import { bytesToMb } from "../telemetry/system.js";
@@ -1610,24 +1616,82 @@ function createNoopProducerLogger(): ProducerLogger {
   };
 }
 
+/** Backstop cap: even absent an actual router failure, stop offering the
+ * trial after this many engaged (routed or reverted) renders for an
+ * install. Without this, a healthy router that never reverts would stay
+ * force-enabled on every eligible render forever (review finding). */
+const DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS = 25;
+
+/**
+ * True across every `renderLocal` call in THIS process once the trial has
+ * armed `HF_DE_PARALLEL_ROUTER` here — distinct from the env var's own
+ * value, which stays "true" across an entire `--batch` run. Without this,
+ * a second batch row's `process.env.HF_DE_PARALLEL_ROUTER !== undefined`
+ * check can't tell "we set this ourselves on row 1" from "the user set
+ * this" and would wrongly treat itself as un-armed, silently dropping that
+ * row's outcome from ever reaching `maybeConsumeDeParallelRouterTrial`
+ * (review finding).
+ */
+let deParallelRouterTrialManagedByUs = false;
+
+/**
+ * Test-only reset for `deParallelRouterTrialManagedByUs` — a real CLI
+ * process only ever runs one `--batch` sequence, so this state never needs
+ * resetting outside a test process where many independent test cases share
+ * one imported module instance.
+ */
+// fallow-ignore-next-line unused-export
+export function __resetDeParallelRouterTrialStateForTests(): void {
+  deParallelRouterTrialManagedByUs = false;
+}
+
 /**
  * Enable the DE parallel-router experiment (`HF_DE_PARALLEL_ROUTER`, default
- * off) for this render, on EVERY eligible render for this install, so we get
- * real-traffic router telemetry (revert rate, verify-db distribution)
- * without requiring anyone to manually set the env var — see
- * `HyperframesConfig.deParallelRouterTrialFired`. Deliberately runs
- * indefinitely (not just once) to maximize "routed" success-telemetry
- * volume; see `maybeConsumeDeParallelRouterTrial` for what turns it off.
- * Returns whether this call armed it (so the caller knows to check for
- * consumption afterward) — false if it's already failed once for this
- * install, or the user already set the env var themselves (never override
- * an explicit choice), or telemetry is disabled (no point risking the
+ * off) for this render, on every eligible render for this install (up to
+ * `DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS`), so we get real-traffic router
+ * telemetry (revert rate, verify-db distribution) without requiring anyone
+ * to manually set the env var — see `HyperframesConfig.deParallelRouterTrialFired`.
+ * See `maybeConsumeDeParallelRouterTrial` for what turns it off. Returns
+ * whether this call armed it (so the caller knows to check for consumption
+ * afterward) — false if it's already failed (or hit the render cap) for
+ * this install, or the user already set the env var themselves (never
+ * override an explicit choice — see `deParallelRouterTrialManagedByUs` for
+ * how a later `--batch` row distinguishes that from our own earlier arm),
+ * or telemetry isn't actually recordable right now (`shouldTrack()` —
+ * covers dev mode / DO_NOT_TRACK / HYPERFRAMES_NO_TELEMETRY, a strict
+ * superset of `config.telemetryEnabled` alone; no point risking the
  * experimental path if we can't even record the resulting signal).
  */
+/** True once the trial should stop offering itself: already failed, hit the
+ * render-count backstop, or telemetry isn't actually recordable right now. */
+function isDeParallelRouterTrialBlocked(config: HyperframesConfig): boolean {
+  const overRenderCap =
+    (config.deParallelRouterTrialRenderCount ?? 0) >= DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS;
+  return Boolean(config.deParallelRouterTrialFired) || overRenderCap || !shouldTrack();
+}
+
+/** Shared cleanup for both `maybeEnableDeParallelRouterTrial` (this process
+ * should stop offering the trial) and `maybeConsumeDeParallelRouterTrial`
+ * (the trial just failed/hit its cap) — a no-op unless WE were the ones
+ * managing the env var. */
+function stopManagingDeParallelRouterTrial(): void {
+  if (!deParallelRouterTrialManagedByUs) return;
+  delete process.env.HF_DE_PARALLEL_ROUTER;
+  deParallelRouterTrialManagedByUs = false;
+}
+
 function maybeEnableDeParallelRouterTrial(quiet: boolean): boolean {
-  if (process.env.HF_DE_PARALLEL_ROUTER !== undefined) return false;
-  const config = readConfig();
-  if (config.deParallelRouterTrialFired || !config.telemetryEnabled) return false;
+  const userSetIt =
+    process.env.HF_DE_PARALLEL_ROUTER !== undefined && !deParallelRouterTrialManagedByUs;
+  if (userSetIt) return false;
+
+  if (isDeParallelRouterTrialBlocked(readConfig())) {
+    stopManagingDeParallelRouterTrial();
+    return false;
+  }
+
+  if (deParallelRouterTrialManagedByUs) return true;
+  deParallelRouterTrialManagedByUs = true;
   process.env.HF_DE_PARALLEL_ROUTER = "true";
   if (!quiet) {
     console.log(
@@ -1644,28 +1708,43 @@ function maybeEnableDeParallelRouterTrial(quiet: boolean): boolean {
 /**
  * After a trial-armed render, persist that the router's OWN bet actually
  * failed — its self-verify/generic-failure safety net fired
- * (`deParallelRouter === "reverted"`) — so it's never enabled again for this
- * install. A clean "routed" (the render succeeded with no fallback) does
- * NOT consume the trial — the whole point is to keep trying on every
- * eligible render until we see one real failure signal, maximizing
- * successful-routing telemetry volume rather than stopping at the first
- * data point. Checks both the success path (`perfSummary`) and the failure
- * path (`errorDetails.observability.capture`, mutated in place before a
- * hard failure throws) — a render that still failed even after the
- * fallback retry counts too. A render that crashed for an unrelated reason
- * while merely "routed" (never reached "reverted" — e.g. cancellation)
- * does NOT count as a router failure and does not turn the trial off.
- * No-ops if the router never became eligible for this render (e.g. too few
- * frames): the trial stays available for a future run either way.
+ * (`deParallelRouter === "reverted"`) — or that the render-count backstop
+ * (`DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS`) was reached, so it's never
+ * enabled again for this install. A clean "routed" (the render succeeded
+ * with no fallback) does NOT consume the trial by itself — the whole point
+ * is to keep trying on every eligible render until we see a real failure
+ * signal (bounded by the render cap), maximizing successful-routing
+ * telemetry volume rather than stopping at the first data point. Checks
+ * both the success path (`perfSummary`) and the failure path
+ * (`errorDetails.observability.capture`, mutated in place before a hard
+ * failure throws) — a render that still failed even after the fallback
+ * retry counts too. A render that crashed for an unrelated reason while
+ * merely "routed" (never reached "reverted" — e.g. cancellation) does NOT
+ * count as a router failure and does not turn the trial off. No-ops if the
+ * router never became eligible for this render (e.g. too few frames): the
+ * trial stays available for a future run either way, uncounted.
+ *
+ * Re-reads the config fresh from disk immediately before writing (bypassing
+ * the in-process read cache) rather than reusing whatever was cached at
+ * `maybeEnableDeParallelRouterTrial` time — narrows, though doesn't
+ * eliminate, the window for a concurrently-running CLI process (another
+ * terminal, a parallel script) to clobber this write with its own stale
+ * snapshot of unrelated config fields (review finding; this repo has no
+ * cross-process config file locking).
  */
 function maybeConsumeDeParallelRouterTrial(trialArmed: boolean, job: RenderJob): void {
   if (!trialArmed) return;
-  const failed =
-    job.perfSummary?.drawElement?.parallelRouter === "reverted" ||
-    job.errorDetails?.observability?.capture.deParallelRouter === "reverted";
-  if (!failed) return;
-  const config = readConfig();
-  config.deParallelRouterTrialFired = true;
+  const outcome =
+    job.perfSummary?.drawElement?.parallelRouter ??
+    job.errorDetails?.observability?.capture.deParallelRouter;
+  if (outcome === undefined) return;
+  const config = readConfigFresh();
+  const renderCount = (config.deParallelRouterTrialRenderCount ?? 0) + 1;
+  config.deParallelRouterTrialRenderCount = renderCount;
+  if (outcome === "reverted" || renderCount >= DE_PARALLEL_ROUTER_TRIAL_MAX_RENDERS) {
+    config.deParallelRouterTrialFired = true;
+    stopManagingDeParallelRouterTrial();
+  }
   writeConfig(config);
 }
 
