@@ -1112,6 +1112,22 @@ describe("check pipeline", () => {
   });
 });
 
+describe("frame-check flag grammar", () => {
+  it("keeps bare --frame-check on defaults and parses the value form", async () => {
+    const { parseFrameCheck } = await import("./check.js");
+    expect(parseFrameCheck(undefined)).toBeUndefined();
+    expect(parseFrameCheck(true)).toEqual({});
+    expect(parseFrameCheck("")).toEqual({});
+    expect(parseFrameCheck("severity=error;seek=.25,.75;tol=4")).toEqual({
+      severity: "error",
+      seek: [0.25, 0.75],
+      tol: 4,
+    });
+    expect(() => parseFrameCheck("bogus=1")).toThrow("Invalid --frame-check");
+    expect(() => parseFrameCheck("tol=-2")).toThrow("Invalid --frame-check");
+  });
+});
+
 describe("contrast persistence", () => {
   it("demotes a single-sample contrast failure to warning but gates held failures", async () => {
     const driver = fakeDriver({

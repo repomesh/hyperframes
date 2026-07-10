@@ -70,21 +70,25 @@ function installSessionMock(page: ReturnType<typeof fakePage>): void {
   );
 }
 
+function mountCanvasFixture(inner = ""): void {
+  document.body.innerHTML = `
+    <div data-composition-id="main" data-duration="10" data-width="640" data-height="360">${inner}</div>
+  `;
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 640 });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 360 });
+}
+
 it("carries raw browser geometry through the page driver and pipeline", async () => {
   vi.spyOn(Date, "now")
     .mockReturnValueOnce(100)
     .mockReturnValueOnce(160)
     .mockReturnValueOnce(200)
     .mockReturnValueOnce(240);
-  document.body.innerHTML = `
-    <div data-composition-id="main" data-duration="10" data-width="640" data-height="360">
+  mountCanvasFixture(`
       <section data-composition-file="scenes/hero.html">
         <img id="hero-image" data-layout-name="hero" src="data:image/png;base64,AA==" />
       </section>
-    </div>
-  `;
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 640 });
-  Object.defineProperty(window, "innerHeight", { configurable: true, value: 360 });
+  `);
   installRects();
   const page = fakePage();
   installSessionMock(page);
@@ -120,13 +124,9 @@ it("round-trips the browser script's raw contrast candidates back into finish", 
   // candidate (width/height) makes every sample rect NaN and the audit
   // silently reports zero checked elements as green.
   vi.spyOn(Date, "now").mockReturnValue(100);
-  document.body.innerHTML = `
-    <div data-composition-id="main" data-duration="10" data-width="640" data-height="360">
+  mountCanvasFixture(`
       <div id="headline">Readable copy</div>
-    </div>
-  `;
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 640 });
-  Object.defineProperty(window, "innerHeight", { configurable: true, value: 360 });
+  `);
   const root = document.querySelector("[data-composition-id]");
   const headline = document.querySelector("#headline");
   if (!root || !headline) throw new Error("Contrast fixture failed to mount");
@@ -215,11 +215,7 @@ it("round-trips the browser script's raw contrast candidates back into finish", 
 
 it("carries validate's clip-duration audit into the runtime findings", async () => {
   vi.spyOn(Date, "now").mockReturnValue(100);
-  document.body.innerHTML = `
-    <div data-composition-id="main" data-duration="10" data-width="640" data-height="360"></div>
-  `;
-  Object.defineProperty(window, "innerWidth", { configurable: true, value: 640 });
-  Object.defineProperty(window, "innerHeight", { configurable: true, value: 360 });
+  mountCanvasFixture();
   const validateModule = await import("../commands/validate.js");
   vi.mocked(validateModule.auditClipDurations).mockResolvedValue([
     {

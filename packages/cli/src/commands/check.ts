@@ -15,7 +15,7 @@ import {
   type CheckReport,
   type CheckSection,
 } from "../utils/checkPipeline.js";
-import type { CaptionZoneOptions } from "../utils/checkTypes.js";
+import type { CaptionZoneOptions, FrameCheckOptions } from "../utils/checkTypes.js";
 
 export const examples: Example[] = [
   ["Run the full verification gate", "hyperframes check"],
@@ -109,10 +109,9 @@ export function createCheckCommand(
           'Caption band "x0=0;y0=.82;x1=1;y1=1[;severity=warning|error][;seek=.5,1]" (fractions 0-1; defaults: warning, seek=1)',
       },
       "frame-check": {
-        type: "boolean",
+        type: "string",
         description:
-          "Use as --frame-check (boolean/no value; tol=2px, severity=warning, seek=.5; breach floor=max(120px, 6% of shorter canvas edge))",
-        default: false,
+          'Bare --frame-check uses defaults (tol=2px, severity=warning, seek=.5; breach floor=max(120px, 6% of shorter canvas edge)); or pass "severity=error;seek=.25,.75;tol=4" to tune',
       },
     },
     async run({ args }) {
@@ -161,11 +160,54 @@ function parseCheckOptions(args: Record<string, unknown>): CheckOptions {
     strict: args.strict === true,
     snapshots: args.snapshots === true,
     captionZone: parseCaptionZone(args["caption-zone"]),
-    frameCheck: args["frame-check"] === true ? {} : undefined,
+    frameCheck: parseFrameCheck(args["frame-check"]),
   };
 }
 
 const CAPTION_ZONE_FIELDS = new Set(["x0", "y0", "x1", "y1", "severity", "seek"]);
+
+const FRAME_CHECK_FIELDS = new Set(["severity", "seek", "tol"]);
+
+// Mirrors --caption-zone's spec grammar so the EF bridge's severity/seek/tol
+// options survive the migration instead of being silently dropped by a
+// boolean flag (bare --frame-check keeps today's defaults).
+export function parseFrameCheck(value: unknown): FrameCheckOptions | undefined {
+  if (value === undefined || value === null || value === false) return undefined;
+  if (value === true || value === "") return {};
+  if (typeof value !== "string") throw frameCheckError();
+  const fields = parseFrameCheckFields(value);
+  const severity = captionSeverity(fields.get("severity"));
+  const seek = captionSeeks(fields.get("seek"));
+  const tol = parseFrameCheckTolerance(fields.get("tol"));
+  return {
+    ...(severity ? { severity } : {}),
+    ...(seek ? { seek } : {}),
+    ...(tol !== undefined ? { tol } : {}),
+  };
+}
+
+function parseFrameCheckFields(value: string): Map<string, string> {
+  const fields = new Map<string, string>();
+  for (const part of value.split(";")) {
+    const { key, entry } = parseCaptionField(part);
+    if (!FRAME_CHECK_FIELDS.has(key) || fields.has(key)) throw frameCheckError();
+    fields.set(key, entry);
+  }
+  return fields;
+}
+
+function parseFrameCheckTolerance(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const tol = Number.parseFloat(raw);
+  if (!Number.isFinite(tol) || tol < 0) throw frameCheckError();
+  return tol;
+}
+
+function frameCheckError(): Error {
+  return new Error(
+    'Invalid --frame-check: use bare --frame-check or "severity=warning|error;seek=.25,.75;tol=4" (all fields optional)',
+  );
+}
 
 function parseCaptionZone(value: unknown): CaptionZoneOptions | undefined {
   if (value === undefined || value === null) return undefined;
