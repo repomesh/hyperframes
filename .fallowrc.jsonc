@@ -90,6 +90,12 @@
     "packages/cli/src/cloud/_gen/**",
   ],
   "ignoreExports": [
+    // Public player-state types are consumed by package users outside this
+    // workspace. Keep the barrel stable even when no in-repo import needs it.
+    {
+      "file": "packages/studio/src/player/index.ts",
+      "exports": ["ZoomMode"],
+    },
     // Part of useTimelineEditing's inferred public return type; consumers invoke
     // handleTimelineGroupResize without importing the change type directly.
     {

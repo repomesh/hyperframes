@@ -9,6 +9,8 @@ import { getTimelineElementIdentity } from "../player/lib/timelineElementHelpers
 import { saveProjectFilesWithHistory, type RecordEditInput } from "../utils/studioFileHistory";
 import type { TimelineZIndexReorderCommit } from "./useTimelineEditingTypes";
 import { extendRootDurationInSource } from "../utils/rootDuration";
+import { postRuntimeControlMessage } from "../player/lib/runtimeProtocol";
+
 export { deleteSelectedKeyframes } from "./deleteSelectedKeyframes";
 function isHTMLElement(element: Element | null): element is HTMLElement {
   if (!element) return false;
@@ -153,15 +155,9 @@ function postRootDurationToPreview(
 ): void {
   const duration = Number(durationSeconds);
   if (!Number.isFinite(duration) || duration <= 0) return;
-  iframe?.contentWindow?.postMessage(
-    {
-      source: "hf-parent",
-      type: "control",
-      action: "set-root-duration",
-      durationSeconds: duration,
-    },
-    "*",
-  );
+  postRuntimeControlMessage(iframe?.contentWindow, "set-root-duration", {
+    durationSeconds: duration,
+  });
 }
 // fallow-ignore-next-line complexity
 function resolveResizePlaybackStart(

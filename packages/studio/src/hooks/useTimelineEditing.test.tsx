@@ -288,12 +288,13 @@ describe("useTimelineEditing timeline z-index reorder", () => {
     expect(forceReloadSdkSession).toHaveBeenCalledTimes(1);
     expect(reloadPreview).not.toHaveBeenCalled();
     expect(postMessageSpy).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         source: "hf-parent",
         type: "control",
         action: "set-root-duration",
         durationSeconds: 5,
-      },
+        protocolVersion: 1,
+      }),
       "*",
     );
 
@@ -354,12 +355,13 @@ describe("useTimelineEditing timeline z-index reorder", () => {
     expect(forceReloadSdkSession).toHaveBeenCalledTimes(1);
     expect(reloadPreview).not.toHaveBeenCalled();
     expect(postMessageSpy).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         source: "hf-parent",
         type: "control",
         action: "set-root-duration",
         durationSeconds: 5,
-      },
+        protocolVersion: 1,
+      }),
       "*",
     );
 

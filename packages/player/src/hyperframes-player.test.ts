@@ -1008,7 +1008,27 @@ describe("HyperframesPlayer seek() sync path", () => {
         source: "hf-parent",
         type: "control",
         action: "seek",
-        frame: Math.round(12.5 * 30),
+        timeSeconds: 12.5,
+        frame: 375,
+        protocolVersion: 1,
+      }),
+      "*",
+    );
+  });
+
+  it("carries a frame fallback for accepted legacy cross-origin runtimes", () => {
+    // An older runtime ignores protocol-v1 metadata and reads only `frame`.
+    // Omitting it makes that bridge default every seek to frame zero.
+    const post = vi.fn();
+    stubContentWindow({ postMessage: post });
+
+    player.seek(7.5);
+
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "seek",
+        timeSeconds: 7.5,
+        frame: 225,
       }),
       "*",
     );
@@ -1162,7 +1182,15 @@ describe("HyperframesPlayer seek() sync path", () => {
 
     player.seek(7);
 
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({ action: "seek", frame: 210 }), "*");
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "seek",
+        timeSeconds: 7,
+        frame: 210,
+        protocolVersion: 1,
+      }),
+      "*",
+    );
   });
 
   it("does not throw when contentWindow access raises (cross-origin embed)", () => {

@@ -1,5 +1,5 @@
 // fallow-ignore-file code-duplication complexity
-import { installRuntimeControlBridge, postRuntimeMessage } from "./bridge";
+import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -93,6 +93,7 @@ export function initSandboxRuntimeModular(): void {
   applyVariableBindings(document);
   const exportRenderFps = resolveExportRenderFps();
   state.canonicalFps = exportRenderFps.fps ?? state.canonicalFps;
+  setRuntimeProtocolFps(state.canonicalFps);
   if (window.__HF_EXPORT_RENDER_SEEK_CONFIG) {
     console.info("[hyperframes] render runtime fps", {
       canonicalFps: state.canonicalFps,
@@ -2172,10 +2173,9 @@ export function initSandboxRuntimeModular(): void {
         if (el instanceof HTMLMediaElement && !el.paused) el.pause();
       }
     },
-    onSeek: (frame, _seekMode) => {
-      const time = Math.max(0, frame) / state.canonicalFps;
-      player.seek(time);
-      emitAnalyticsEvent("composition_seeked", { time });
+    onSeek: (timeSeconds, _seekMode) => {
+      player.seek(timeSeconds);
+      emitAnalyticsEvent("composition_seeked", { time: timeSeconds });
     },
     onSetMuted: (muted) => {
       state.bridgeMuted = muted;
@@ -2266,6 +2266,7 @@ export function initSandboxRuntimeModular(): void {
     },
     onEnablePickMode: () => picker.enablePickMode(),
     onDisablePickMode: () => picker.disablePickMode(),
+    getCanonicalFps: () => state.canonicalFps,
   });
 
   state.deterministicAdapters = [
