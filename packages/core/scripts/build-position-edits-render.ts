@@ -42,7 +42,9 @@ writeFileSync(
 );
 
 try {
-  execFileSync("bunx", ["oxfmt", outPath], { stdio: "ignore" });
+  const oxfmt =
+    process.platform === "win32" ? "oxfmt.cmd" : resolve(repoRoot, "../../node_modules/.bin/oxfmt");
+  execFileSync(oxfmt, [outPath], { stdio: "ignore" });
 } catch {
   // Formatting is best effort when the generator runs in a minimal environment.
 }
