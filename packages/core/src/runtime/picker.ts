@@ -1,4 +1,5 @@
 import type { RuntimeJson, RuntimeOutboundMessage, RuntimePickerElementInfo } from "./types";
+import { COLOR_GRADING_SOURCE_HIDDEN_ATTR } from "../colorGrading";
 import { swallow } from "./diagnostics";
 
 type PickerModuleDeps = {
@@ -17,7 +18,6 @@ const PICKER_BLOCK_SELECTOR = [
   "[data-hyperframes-picker-block]",
   "[data-hyper-shader-loading]",
 ].join(",");
-const COLOR_GRADING_SOURCE_HIDDEN_ATTR = "data-hf-color-grading-source-hidden";
 
 export type PickerModule = {
   enablePickMode: () => void;
