@@ -16,16 +16,37 @@
  * underlying injector leaves the HTML unchanged, so this never makes a bundle
  * worse than plain `bundleToSingleHtml`.
  */
-export async function bundleWithLocalizedFonts(projectDir: string): Promise<string> {
+export async function bundleWithLocalizedFonts(
+  projectDir: string,
+  // Injectable for tests. Production callers omit it and get the producer
+  // font-localization pass, resolved lazily at runtime (see localizeWithProducer).
+  localizeFonts: (html: string) => Promise<string> = localizeWithProducer,
+): Promise<string> {
   const { bundleToSingleHtml } = await import("@hyperframes/core/compiler");
   const html = await bundleToSingleHtml(projectDir);
+  return localizeFonts(html);
+}
+
+/**
+ * Run the render pipeline's `injectDeterministicFontFaces` pass, resolving
+ * `@hyperframes/producer` at RUNTIME only. The specifier is kept out of the
+ * bundler's/test-runner's static module graph (`@vite-ignore` + a variable
+ * specifier) on purpose: the CLI test job doesn't build producer, so a static
+ * `import("@hyperframes/producer")` would fail Vitest's transform-time
+ * resolution. At runtime — the built CLI, or an installed package — producer is
+ * a real dependency and resolves via node_modules.
+ *
+ * Fail-open: if producer can't be resolved or a fetch layer throws, return the
+ * HTML unchanged so a bundle is never worse than plain `bundleToSingleHtml`.
+ */
+async function localizeWithProducer(html: string): Promise<string> {
   try {
-    const { injectDeterministicFontFaces } = await import("@hyperframes/producer");
+    const producerSpecifier = "@hyperframes/producer";
+    const { injectDeterministicFontFaces } = (await import(
+      /* @vite-ignore */ producerSpecifier
+    )) as typeof import("@hyperframes/producer");
     return await injectDeterministicFontFaces(html);
   } catch {
-    // Producer/font localization unavailable (or a fetch layer threw) — fall
-    // back to the plain bundle. Fonts declared via remote <link> still load at
-    // capture time as before; we just lose the deterministic embed.
     return html;
   }
 }
