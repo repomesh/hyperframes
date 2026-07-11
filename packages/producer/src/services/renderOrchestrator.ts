@@ -2245,13 +2245,17 @@ export async function executeRenderJob(
     // Non-DE parallel-streaming router — see shouldStreamParallelCapture.
     // Mutually exclusive with the DE inversion/router above by construction
     // (both DE predicates require useDrawElement; this requires its negation).
-    const captureParallelStreamEligible = shouldStreamParallelCapture({
-      routerEnabled: process.env.HF_CAPTURE_PARALLEL_STREAM === "true",
+    const captureParallelStreamRouterEnabled = process.env.HF_CAPTURE_PARALLEL_STREAM === "true";
+    const captureParallelStreamArgs = {
       workerCount,
       useDrawElement: cfg.useDrawElement,
       outputFormat,
       streamingOk: shouldUseStreamingEncode(cfg, outputFormat, 1, job.duration),
       layeredOrEffectRoute: hasHdrContent || compiled.hasShaderTransitions,
+    };
+    const captureParallelStreamEligible = shouldStreamParallelCapture({
+      routerEnabled: captureParallelStreamRouterEnabled,
+      ...captureParallelStreamArgs,
     });
     if (captureParallelStreamEligible) {
       captureParallelStreamForced = true;
@@ -2273,6 +2277,13 @@ export async function executeRenderJob(
         "worker_resolution",
         `parallel ${captureParallelStream} capture routed to streaming`,
       );
+    } else if (shouldStreamParallelCapture({ routerEnabled: true, ...captureParallelStreamArgs })) {
+      // The kill switch is the ONLY failed gate: emit a passive cohort-sizing
+      // signal (capture_parallel_stream = "eligible_off") so the default-off
+      // soak can measure how many fleet renders WOULD route before anyone
+      // enables the flag. Observability-only — no behavior change, no log
+      // noise on the default path.
+      updateCaptureObservability({ captureParallelStream: "eligible_off" });
     }
 
     if (workerCount > 1 && probeSession) {

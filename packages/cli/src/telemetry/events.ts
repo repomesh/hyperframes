@@ -53,7 +53,8 @@ export interface RenderObservabilityTelemetryPayload {
   captureDePreRouterWorkers?: number;
   captureDeSelfVerifyFallback?: boolean;
   captureDeFallbackReason?: string;
-  /** Non-DE parallel-streaming router outcome ("screenshot" | "beginframe"). */
+  /** Non-DE parallel-streaming router outcome ("screenshot" | "beginframe" —
+   * routed; "eligible_off" — would route but the kill switch is off). */
   captureParallelStream?: string;
   observabilityExtractVideoCount?: number;
   observabilityExtractedVideoCount?: number;
