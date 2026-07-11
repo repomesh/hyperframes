@@ -247,6 +247,17 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     for (const clone of [fromClone, toClone]) {
       clone.style.opacity = "1";
       clone.style.visibility = "visible";
+      // A scene root sized only by `position:absolute; inset:0` resolves to
+      // 0x0 inside the staging canvas's layout subtree (no containing-block
+      // dimensions there) — the clone then paints nothing and the transition
+      // textures are blank (wild report: explicit 1080x1920 anchors fixed
+      // both transitions). Pin the clone to the composition's pixel size;
+      // scenes that already carry explicit dimensions are unaffected.
+      clone.style.position = "absolute";
+      clone.style.left = "0";
+      clone.style.top = "0";
+      clone.style.width = `${width}px`;
+      clone.style.height = `${height}px`;
       clone.querySelectorAll<HTMLElement>("[data-start]").forEach((el) => {
         el.style.opacity = "1";
         el.style.visibility = "visible";
