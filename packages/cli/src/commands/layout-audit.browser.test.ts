@@ -346,6 +346,56 @@ it("uses the bridge opacity floor across the ancestor chain", () => {
   expect(candidates.some((candidate) => candidate.selector === "#stacked-copy")).toBe(true);
 });
 
+describe("layout-audit.browser invisible text", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+    delete (window as unknown as { __hyperframesLayoutAudit?: unknown }).__hyperframesLayoutAudit;
+    clearGeometryCollector();
+  });
+
+  function invisibleTextScene(headlineStyle: Partial<CSSStyleDeclaration>): AuditIssue[] {
+    document.body.innerHTML = `
+      <div id="root" data-composition-id="main" data-width="640" data-height="360">
+        <div id="headline">Headline copy</div>
+      </div>
+    `;
+    installGeometry(
+      {
+        root: rect({ left: 0, top: 0, width: 640, height: 360 }),
+        headline: rect({ left: 40, top: 150, width: 300, height: 56 }),
+        text: rect({ left: 40, top: 150, width: 300, height: 56 }),
+      },
+      { headline: headlineStyle },
+    );
+    installAuditScript();
+    return runAudit();
+  }
+
+  it("flags text whose -webkit-text-fill-color is transparent", () => {
+    const issues = invisibleTextScene({
+      color: "rgb(255, 255, 255)",
+      webkitTextFillColor: "rgba(0, 0, 0, 0)",
+    } as unknown as Partial<CSSStyleDeclaration>);
+    const invisible = issues.find((issue) => issue.code === "text_not_painted");
+    expect(invisible).toMatchObject({ selector: "#headline", severity: "error" });
+  });
+
+  it("does not flag text with an opaque color and default fill", () => {
+    const issues = invisibleTextScene({ color: "rgb(255, 255, 255)" });
+    expect(issues.some((issue) => issue.code === "text_not_painted")).toBe(false);
+  });
+
+  it("does not flag gradient text (transparent fill clipped to the glyphs)", () => {
+    const issues = invisibleTextScene({
+      color: "rgb(255, 255, 255)",
+      webkitTextFillColor: "rgba(0, 0, 0, 0)",
+      webkitBackgroundClip: "text",
+    } as unknown as Partial<CSSStyleDeclaration>);
+    expect(issues.some((issue) => issue.code === "text_not_painted")).toBe(false);
+  });
+});
+
 describe("layout-audit.browser content overlap", () => {
   afterEach(() => {
     vi.restoreAllMocks();

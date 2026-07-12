@@ -812,12 +812,12 @@
     const text = textContentFor(element);
     if (!text) return null;
     const cs = getComputedStyle(element);
-    const fill = cs.getPropertyValue("-webkit-text-fill-color") || cs.color;
+    // Vendor computed-style props are read by property (camelCase), matching
+    // the rest of this script; `webkitTextFillColor` computes to `color` when
+    // unset, so it is the effective fill directly.
+    const fill = cs.webkitTextFillColor || cs.color;
     if (colorAlpha(fill) > 0.05) return null;
-    const clip =
-      cs.getPropertyValue("-webkit-background-clip") ||
-      cs.getPropertyValue("background-clip") ||
-      "";
+    const clip = cs.webkitBackgroundClip || cs.backgroundClip || "";
     if (/text/i.test(clip)) return null;
     return {
       code: "text_not_painted",
