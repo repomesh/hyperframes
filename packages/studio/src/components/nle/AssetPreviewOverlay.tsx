@@ -102,14 +102,18 @@ export function AssetPreviewOverlay() {
   useEffect(() => {
     if (!previewAsset) return;
     const opened = usePlayerStore.getState();
+    const openedTime = opened.currentTime;
     // Level-triggered, not edge-triggered: a preview opened while playback is
-    // ALREADY running gets no store change to react to (the RAF loop bypasses
-    // the store), so evaluate the current state once before subscribing.
-    if (opened.isPlaying) {
+    // ALREADY running (the RAF loop bypasses the store) or while a seek is
+    // already in flight gets no store change to react to, so evaluate the
+    // current state once, through the same shared predicate the subscription
+    // uses. openedTime is this snapshot's own currentTime, so the
+    // time-diverged branch can't false-positive at open — only the
+    // isPlaying / requestedSeekTime branches can fire here.
+    if (shouldDismissAssetPreview(openedTime, opened)) {
       clearPreviewAsset();
       return;
     }
-    const openedTime = opened.currentTime;
     return usePlayerStore.subscribe((state) => {
       if (shouldDismissAssetPreview(openedTime, state)) clearPreviewAsset();
     });

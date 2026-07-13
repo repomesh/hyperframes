@@ -18,6 +18,9 @@ afterEach(() => {
   }
   document.body.innerHTML = "";
   usePlayerStore.getState().reset();
+  // reset() does not cover the out-of-loop seek request; clear it explicitly
+  // so a pending-seek test can't leak into the next one.
+  usePlayerStore.getState().clearSeekRequest();
   useAssetPreviewStore.getState().clearPreviewAsset();
 });
 
@@ -35,6 +38,21 @@ describe("AssetPreviewOverlay playback dismissal", () => {
     // The RAF playback loop bypasses the store, so no post-open store change
     // will arrive — the dismiss check must be level-triggered, not edge-triggered.
     usePlayerStore.setState({ isPlaying: true });
+    mountOverlay();
+
+    act(() => {
+      useAssetPreviewStore.getState().setPreviewAsset("assets/clip.mp3", "p1");
+    });
+
+    expect(useAssetPreviewStore.getState().previewAsset).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("dismisses immediately when opened while a seek is ALREADY in flight", () => {
+    // A pending out-of-loop seek (requestedSeekTime set, not yet consumed) may
+    // produce no further store change before currentTime settles — the on-open
+    // check must evaluate the full shared dismiss predicate, not just isPlaying.
+    usePlayerStore.setState({ isPlaying: false, requestedSeekTime: 3.2 });
     mountOverlay();
 
     act(() => {

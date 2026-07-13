@@ -107,17 +107,20 @@ function renderTimelineEditingHook(input: {
   reloadPreview?: () => void;
   sdkSession?: Awaited<ReturnType<typeof openComposition>> | null;
   forceReloadSdkSession?: () => void;
+  showToast?: (message: string, kind?: string) => void;
 }): {
   move: ReturnType<typeof useTimelineEditing>["handleTimelineElementMove"];
   resize: ReturnType<typeof useTimelineEditing>["handleTimelineElementResize"];
   groupMove: ReturnType<typeof useTimelineEditing>["handleTimelineGroupMove"];
   groupResize: ReturnType<typeof useTimelineEditing>["handleTimelineGroupResize"];
+  del: ReturnType<typeof useTimelineEditing>["handleTimelineElementDelete"];
   unmount: () => void;
 } {
   let move: ReturnType<typeof useTimelineEditing>["handleTimelineElementMove"] | null = null;
   let resize: ReturnType<typeof useTimelineEditing>["handleTimelineElementResize"] | null = null;
   let groupMove: ReturnType<typeof useTimelineEditing>["handleTimelineGroupMove"] | null = null;
   let groupResize: ReturnType<typeof useTimelineEditing>["handleTimelineGroupResize"] | null = null;
+  let del: ReturnType<typeof useTimelineEditing>["handleTimelineElementDelete"] | null = null;
 
   function Harness() {
     const commitRef = useRef(input.onZIndexCommit);
@@ -126,7 +129,7 @@ function renderTimelineEditingHook(input: {
       projectId: input.projectId ?? null,
       activeCompPath: "index.html",
       timelineElements: input.timelineElements,
-      showToast: vi.fn(),
+      showToast: input.showToast ?? vi.fn(),
       writeProjectFile: input.writeProjectFile ?? vi.fn(),
       recordEdit: input.recordEdit ?? vi.fn(),
       domEditSaveTimestampRef: { current: 0 },
@@ -142,6 +145,7 @@ function renderTimelineEditingHook(input: {
     resize = hook.handleTimelineElementResize;
     groupMove = hook.handleTimelineGroupMove;
     groupResize = hook.handleTimelineGroupResize;
+    del = hook.handleTimelineElementDelete;
     return null;
   }
 
@@ -150,7 +154,8 @@ function renderTimelineEditingHook(input: {
   if (!resize) throw new Error("Expected hook to expose resize handler");
   if (!groupMove) throw new Error("Expected hook to expose group move handler");
   if (!groupResize) throw new Error("Expected hook to expose group resize handler");
-  return { move, resize, groupMove, groupResize, unmount };
+  if (!del) throw new Error("Expected hook to expose delete handler");
+  return { move, resize, groupMove, groupResize, del, unmount };
 }
 
 type TimelineRecordEdit = NonNullable<
@@ -907,12 +912,12 @@ describe("useTimelineEditing duration rollback on failed persist", () => {
   ].join("\n");
 
   /** Iframe with a comp root so the optimistic sync (and its rollback) can patch data-duration. */
-  function createRootedIframe(): HTMLIFrameElement {
+  function createRootedIframe(source: string = ROLLBACK_SOURCE): HTMLIFrameElement {
     const iframe = document.createElement("iframe");
     document.body.append(iframe);
     const doc = iframe.contentDocument;
     if (!doc) throw new Error("Expected iframe document");
-    doc.body.innerHTML = ROLLBACK_SOURCE;
+    doc.body.innerHTML = source;
     return iframe;
   }
 
@@ -1013,6 +1018,74 @@ describe("useTimelineEditing duration rollback on failed persist", () => {
     });
 
     expect(rejection).toBe(writeError);
+    expect(usePlayerStore.getState().duration).toBe(4);
+    expect(rootDurationAttr(iframe)).toBe("4");
+
+    hook.unmount();
+  });
+
+  it("rolls back the store duration and live root when a delete persist fails", async () => {
+    // Two clips; deleting the furthest one shrinks the content-driven duration
+    // optimistically (4s -> 2s), so a failed write must roll that shrink back.
+    const DELETE_SOURCE = [
+      `<div data-composition-id="main" data-duration="4">`,
+      `  <div id="clip" data-start="0" data-duration="2" data-track-index="0"></div>`,
+      `  <div id="tail" data-start="2" data-duration="2" data-track-index="0"></div>`,
+      `</div>`,
+    ].join("\n");
+    const DELETE_REMOVED_SOURCE = [
+      `<div data-composition-id="main" data-duration="4">`,
+      `  <div id="clip" data-start="0" data-duration="2" data-track-index="0"></div>`,
+      `</div>`,
+    ].join("\n");
+
+    const iframe = createRootedIframe(DELETE_SOURCE);
+    const tail = timelineElement({ id: "tail", track: 0, zIndex: 0, start: 2, duration: 2 });
+    const writeError = new Error("write failed");
+    const writeProjectFile = vi
+      .fn<(...args: unknown[]) => Promise<void>>()
+      .mockRejectedValue(writeError);
+    // The delete path reads the file, then asks the server-side remove-element
+    // mutation for the post-removal source before persisting it.
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/api/projects/p1/files/")) {
+        return jsonResponse({ content: DELETE_SOURCE });
+      }
+      if (url.includes("/api/projects/p1/file-mutations/remove-element/")) {
+        return jsonResponse({ changed: true, content: DELETE_REMOVED_SOURCE });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    usePlayerStore.getState().setDuration(4);
+    const showToast = vi.fn();
+    const hook = renderTimelineEditingHook({
+      timelineElements: [tail],
+      iframe,
+      onZIndexCommit: vi.fn().mockResolvedValue(undefined),
+      projectId: "p1",
+      writeProjectFile,
+      recordEdit: vi.fn(async () => {}),
+      reloadPreview: vi.fn(),
+      showToast,
+    });
+
+    await act(async () => {
+      // Unlike move/resize, the delete handler swallows the persist failure
+      // into a toast, so the promise resolves.
+      await hook.del(tail);
+      await flushAsyncWork();
+    });
+
+    // The optimistic shrink reached the persist attempt (root patched to the
+    // furthest remaining clip end, 2s)...
+    expect(writeProjectFile).toHaveBeenCalledTimes(1);
+    expect(String(writeProjectFile.mock.calls[0]![1])).toContain(
+      'data-composition-id="main" data-duration="2"',
+    );
+    expect(showToast).toHaveBeenCalledWith("write failed");
+    // ...and the failed write rolled the readout AND the live root back.
     expect(usePlayerStore.getState().duration).toBe(4);
     expect(rootDurationAttr(iframe)).toBe("4");
 
