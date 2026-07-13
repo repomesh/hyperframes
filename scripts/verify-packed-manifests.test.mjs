@@ -4,9 +4,38 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
-import { listPackedJavaScriptImportIssues } from "./verify-packed-manifests.mjs";
+import {
+  listPackedExportContracts,
+  listPackedJavaScriptImportIssues,
+  packageExportSpecifier,
+} from "./verify-packed-manifests.mjs";
 
 describe("packed manifest verifier", () => {
+  it("derives consumer specifiers from the packed export map", () => {
+    assert.equal(packageExportSpecifier("@hyperframes/sdk", "."), "@hyperframes/sdk");
+    assert.equal(
+      packageExportSpecifier("@hyperframes/sdk", "./adapters/fs"),
+      "@hyperframes/sdk/adapters/fs",
+    );
+    assert.deepEqual(
+      listPackedExportContracts([
+        {
+          packedPackage: {
+            name: "@hyperframes/example",
+            exports: {
+              ".": { import: "./dist/index.js", types: "./dist/index.d.ts" },
+              "./runtime": "./dist/runtime.js",
+            },
+          },
+        },
+      ]),
+      [
+        { specifier: "@hyperframes/example", typechecked: true },
+        { specifier: "@hyperframes/example/runtime", typechecked: false },
+      ],
+    );
+  });
+
   function withPackedFiles(files, packedFiles, callback) {
     const dir = mkdtempSync(join(tmpdir(), "hyperframes-pack-test-"));
     try {
