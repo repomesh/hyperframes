@@ -146,6 +146,7 @@ export function useElementLifecycleOps({
         key?: string;
       }>,
       gestureCoalesceKey?: string,
+      actionKind?: string,
     ) => {
       if (entries.length === 0) return Promise.resolve();
       // Resolver shadow (telemetry-only, decoupled from cutover): record whether
@@ -153,9 +154,13 @@ export function useElementLifecycleOps({
       onReorderShadow?.(
         entries.map((e) => readHfId(e.element)).filter((id): id is string => id != null),
       );
+      // The default key carries the action kind so two DIFFERENT actions on the
+      // same element set (e.g. "bring-forward" then "send-backward" within the
+      // coalesce window) never merge into one undo step. Callers that share a
+      // gesture (lane moves) pass an explicit gestureCoalesceKey instead.
       const coalesceKey =
         gestureCoalesceKey ??
-        `z-reorder:${entries.map((e) => e.id ?? e.selector ?? e.element.getAttribute("data-hf-id") ?? "el").join(":")}`;
+        `z-reorder:${actionKind ?? "reorder"}:${entries.map((e) => e.id ?? e.selector ?? e.element.getAttribute("data-hf-id") ?? "el").join(":")}`;
       const patchesBySourceFile = new Map<string, DomEditPatchBatch["patches"]>();
       const rollbacks: Array<() => void> = [];
       for (const entry of entries) {

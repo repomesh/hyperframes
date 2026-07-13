@@ -74,6 +74,9 @@ export function useTimelineStackingSync({ expandedElementsRef }: UseTimelineStac
             selector: el.selector,
             selectorIndex: el.selectorIndex,
             sourceFile: el.sourceFile ?? zSyncActiveCompPath ?? "index.html",
+            // The store key: lets the commit update the store's zIndex
+            // synchronously (and roll it back on failure).
+            key: p.key,
           },
         ];
       });

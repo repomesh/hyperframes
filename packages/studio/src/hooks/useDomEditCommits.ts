@@ -61,6 +61,34 @@ interface RecordEditInput {
   files: Record<string, { before: string; after: string }>;
 }
 
+/** Human-readable identifier for a batch patch target (for the unmatched warning). */
+function describeBatchPatchTarget(patch: DomEditPatchBatch["patches"][number]): string {
+  return patch.target.id ?? patch.target.hfId ?? patch.target.selector ?? "(unaddressed)";
+}
+
+/**
+ * Surface server-reported unmatched patches. The matched subset already
+ * persisted, so this must NOT throw (a throw would roll back applied state) —
+ * warn and emit save-failure telemetry with a distinct reason instead.
+ */
+function reportUnmatchedBatchPatches(batch: DomEditPatchBatch, matched: boolean[]): void {
+  const unmatchedIds = batch.patches
+    .filter((_, index) => matched[index] === false)
+    .map(describeBatchPatchTarget);
+  if (unmatchedIds.length === 0) return;
+  console.warn(
+    `[studio] z-index reorder: server could not match ${unmatchedIds.length} patch target(s) in ` +
+      `${batch.sourceFile} (their z-order will revert on reload):`,
+    unmatchedIds.join(", "),
+  );
+  trackStudioSaveFailure({
+    source: "dom_edit",
+    error: new Error(`Batch patch target(s) unmatched: ${unmatchedIds.join(", ")}`),
+    filePath: batch.sourceFile,
+    mutationType: "z-reorder-unmatched",
+  });
+}
+
 async function patchElementBatch(projectId: string, batch: DomEditPatchBatch) {
   const before = await readProjectFileContent(projectId, batch.sourceFile);
   const response = await fetch(
@@ -77,8 +105,10 @@ async function patchElementBatch(projectId: string, batch: DomEditPatchBatch) {
   }
   const result = (await response.json()) as {
     changed?: boolean;
+    matched?: boolean[];
     content?: string;
   };
+  if (Array.isArray(result.matched)) reportUnmatchedBatchPatches(batch, result.matched);
   return {
     sourceFile: batch.sourceFile,
     changed: result.changed === true,

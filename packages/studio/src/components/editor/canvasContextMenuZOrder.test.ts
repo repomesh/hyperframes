@@ -375,6 +375,27 @@ describe("resolveZOrderChange – excludes non-painting siblings", () => {
     expect(order.indexOf("target")).toBeLessThan(order.indexOf("a"));
   });
 
+  it("ignores <template>/<noscript> siblings in the family", () => {
+    // A renumber fallback once wrote z-index/position into <template> source
+    // markup because templates entered the sibling family. They never paint —
+    // exclude them like audio/script/style.
+    const parent = document.createElement("div");
+    const a = makeEl("a", "0");
+    const template = document.createElement("template");
+    template.style.zIndex = "2";
+    const noscript = document.createElement("noscript");
+    const target = makeEl("target", "0");
+    parent.append(a, template, noscript, target);
+
+    const patches = resolveZOrderPatches(target, "send-to-back");
+    for (const p of patches) {
+      expect(p.element).not.toBe(template);
+      expect(p.element).not.toBe(noscript);
+    }
+    const order = renderOrderIds(parent, { a, target }, patches);
+    expect(order.indexOf("target")).toBeLessThan(order.indexOf("a"));
+  });
+
   it("a lone painting element beside only non-painting siblings has no family → null", () => {
     const parent = document.createElement("div");
     const target = makeEl("target", "1");

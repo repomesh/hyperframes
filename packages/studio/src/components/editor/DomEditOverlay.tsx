@@ -27,7 +27,7 @@ import { useDomEditCompositionRect } from "./useDomEditCompositionRect";
 import { useMountEffect } from "../../hooks/useMountEffect";
 import { startOffCanvasIndicatorRefresh } from "./offCanvasIndicatorRefresh";
 import { CanvasContextMenu } from "./CanvasContextMenu";
-import type { ZOrderPatch } from "./canvasContextMenuZOrder";
+import type { ZOrderAction, ZOrderPatch } from "./canvasContextMenuZOrder";
 import { getPreviewTargetFromPointer } from "../../utils/studioPreviewHelpers";
 
 // Re-exports for external consumers — preserving existing import paths.
@@ -91,12 +91,17 @@ interface DomEditOverlayProps {
    */
   onDeleteSelection?: (selection: DomEditSelection) => void;
   /**
-   * Called with the resolved z-order patch list after an optimistic DOM update.
-   * The patch list is tie-aware and may include sibling elements (see
-   * canvasContextMenuZOrder). Wire to handleDomZIndexReorderCommit from
+   * Called with the resolved z-order patch list and the menu action that
+   * produced it (feeds the undo coalesce key). The patch list is tie-aware and
+   * may include sibling elements (see canvasContextMenuZOrder); the live DOM is
+   * NOT yet mutated. Wire to handleDomZIndexReorderCommit from
    * useDomEditActionsContext. See CanvasContextMenu.tsx module comment.
    */
-  onApplyZIndex?: (selection: DomEditSelection, patches: ZOrderPatch[]) => void;
+  onApplyZIndex?: (
+    selection: DomEditSelection,
+    patches: ZOrderPatch[],
+    action: ZOrderAction,
+  ) => void;
 }
 
 // fallow-ignore-next-line complexity
@@ -562,8 +567,8 @@ export const DomEditOverlay = memo(function DomEditOverlay({
           }
           onApplyZIndex={
             onApplyZIndex
-              ? (patches) => {
-                  onApplyZIndex(contextMenu.sel, patches);
+              ? (patches, action) => {
+                  onApplyZIndex(contextMenu.sel, patches, action);
                 }
               : undefined
           }

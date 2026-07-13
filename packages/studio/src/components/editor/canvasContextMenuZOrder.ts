@@ -81,8 +81,18 @@ function isElementNode(node: Node): node is HTMLElement {
  * z-index onto the qa-clean audio element, and counting it as a sibling skews the
  * renumber for the visible elements. `<script>/<style>/<link>/<meta>` are also
  * non-painting and could otherwise pad the family / eat a z slot.
+ * `<template>/<noscript>` never paint either — letting them in meant renumber
+ * fallbacks wrote z-index/position into template source markup.
  */
-const NON_PAINTING_TAGS = new Set(["AUDIO", "SCRIPT", "STYLE", "LINK", "META"]);
+const NON_PAINTING_TAGS = new Set([
+  "AUDIO",
+  "SCRIPT",
+  "STYLE",
+  "LINK",
+  "META",
+  "TEMPLATE",
+  "NOSCRIPT",
+]);
 
 /** A painting element: an element node whose tag actually renders pixels. */
 function isPaintingElement(node: Node): node is HTMLElement {
@@ -112,7 +122,7 @@ function getFamily(target: HTMLElement): { entries: RenderEntry[]; targetIndex: 
   return { entries, targetIndex };
 }
 
-/** True if two DOM bounding rects intersect (even if touching). */
+/** True if two DOM bounding rects strictly overlap (rects that merely touch do NOT intersect). */
 function rectsIntersect(
   a: { left: number; top: number; right: number; bottom: number },
   b: { left: number; top: number; right: number; bottom: number },
