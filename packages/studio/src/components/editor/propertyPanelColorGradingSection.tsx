@@ -138,7 +138,11 @@ export function ColorGradingSection({
   assets: string[];
   previewIframeRef?: RefObject<HTMLIFrameElement | null>;
   onImportAssets?: (files: FileList, dir?: string) => Promise<string[]>;
-  onSetAttributeLive: (attr: string, value: string | null) => void | Promise<void>;
+  onSetAttributeLive: (
+    attr: string,
+    value: string | null,
+    onSettled?: (ok: boolean) => void,
+  ) => void | Promise<void>;
   onApplyScope?: (
     scope: "source-file" | "project",
     value: string | null,

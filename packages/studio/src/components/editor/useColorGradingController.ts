@@ -168,7 +168,11 @@ export function useColorGradingController({
   projectId: string;
   element: DomEditSelection;
   previewIframeRef?: RefObject<HTMLIFrameElement | null>;
-  onSetAttributeLive: (attr: string, value: string | null) => void | Promise<void>;
+  onSetAttributeLive: (
+    attr: string,
+    value: string | null,
+    onSettled?: (ok: boolean) => void,
+  ) => void | Promise<void>;
   onApplyScope?: (
     scope: "source-file" | "project",
     value: string | null,
@@ -190,6 +194,12 @@ export function useColorGradingController({
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPersistValueRef = useRef<string | null | undefined>(undefined);
   const pendingPersistGradingRef = useRef<NormalizedHfColorGrading | null>(null);
+  // Populated (pure ref write only) during the render-phase identity-change
+  // reset below; the actual write happens in an effect, never during render.
+  const queuedOutgoingFlushRef = useRef<{
+    setAttributeLive: typeof onSetAttributeLive;
+    value: string | null;
+  } | null>(null);
   // The last grading value actually confirmed saved — distinct from `grading`
   // (the optimistic value shown immediately on commit). A rejected persist
   // reverts to this instead of leaving the UI permanently showing a value
@@ -216,8 +226,11 @@ export function useColorGradingController({
   // Without this, switching selection reuses the previous element's grading/
   // compare/mediaMetadata state and can commit stale pending work onto the
   // new target. Adjusting state during render (comparing against a ref) is
-  // React's documented pattern for this — it resolves in the same render
-  // pass instead of flashing the stale state for one frame via useEffect.
+  // React's documented pattern for STATE updates specifically — resolving in
+  // the same render pass instead of flashing stale state for one frame. It
+  // does NOT license side effects: only pure ref/state writes happen in this
+  // block. The actual outgoing-element flush is enqueued here and performed
+  // in the effect below, after commit.
   const identityKey = selectionIdentityKey(element);
   const identityKeyRef = useRef(identityKey);
   if (identityKeyRef.current !== identityKey) {
@@ -231,9 +244,10 @@ export function useColorGradingController({
     // the user just changed; targeting it at the callback bound to the OLD
     // selection (captured above) keeps it from landing on the new element.
     if (pendingPersistValueRef.current !== undefined) {
-      trackStudioPendingEdit(
-        previousOnSetAttributeLive(COLOR_GRADING_DATA_KEY, pendingPersistValueRef.current),
-      );
+      queuedOutgoingFlushRef.current = {
+        setAttributeLive: previousOnSetAttributeLive,
+        value: pendingPersistValueRef.current,
+      };
     }
     pendingPersistValueRef.current = undefined;
     pendingPersistGradingRef.current = null;
@@ -250,6 +264,18 @@ export function useColorGradingController({
     setRuntimeStatus({ state: "pending", message: "Waiting for runtime" });
     setMediaMetadata(null);
   }
+
+  // Performs the outgoing-element flush queued above — deliberately in an
+  // effect (post-commit), not inline in the render-phase block, since
+  // writing to disk is a real side effect and must not run during render
+  // (React may call render more than once per commit without this code ever
+  // becoming visible).
+  useEffect(() => {
+    const queued = queuedOutgoingFlushRef.current;
+    if (!queued) return;
+    queuedOutgoingFlushRef.current = null;
+    trackStudioPendingEdit(queued.setAttributeLive(COLOR_GRADING_DATA_KEY, queued.value));
+  }, [identityKey]);
 
   const target = useMemo(
     (): HfColorGradingTarget => ({
@@ -324,24 +350,44 @@ export function useColorGradingController({
   }, [refreshRuntimeStatus]);
 
   const persistColorGradingValue = useCallback(
-    (value: string | null, attemptedGrading: NormalizedHfColorGrading) => {
-      const result = onSetAttributeLiveRef.current(COLOR_GRADING_DATA_KEY, value ?? null);
+    (
+      value: string | null,
+      attemptedGrading: NormalizedHfColorGrading,
+      attemptIdentityKey: string,
+    ) => {
+      // Selection may move on to a different element while this is in
+      // flight — the identity-reset block already gave THAT element its own
+      // confirmedGradingRef baseline, so a result arriving for an element
+      // we've left must not touch its state.
+      const applySettled = (ok: boolean) => {
+        if (identityKeyRef.current !== attemptIdentityKey) return;
+        if (ok) {
+          confirmedGradingRef.current = attemptedGrading;
+          return;
+        }
+        // Persist failed — the optimistic grading was never actually saved.
+        // Revert to the last confirmed-good value instead of leaving the
+        // control showing an unsaved state as if it succeeded.
+        const reverted = confirmedGradingRef.current;
+        latestGradingRef.current = reverted;
+        setGrading(reverted);
+        setRuntimeStatus({ state: "unavailable", message: "Save failed — reverted" });
+      };
+      // `onSettled` is the real signal — the underlying commit runner
+      // (runDomEditCommit) intentionally swallows persist failures so a
+      // caller `await`-ing this promise never sees a rejection; a rejection
+      // handler here alone would be dead code against the actual Studio
+      // callback. The `.catch` below is a fallback for any OTHER
+      // implementation of onSetAttributeLive that rejects instead.
+      const result = onSetAttributeLiveRef.current(
+        COLOR_GRADING_DATA_KEY,
+        value ?? null,
+        applySettled,
+      );
       return trackStudioPendingEdit(
         Promise.resolve(result).then(
-          () => {
-            confirmedGradingRef.current = attemptedGrading;
-          },
-          () => {
-            // Persist failed — the optimistic grading was never actually
-            // saved. Revert to the last confirmed-good value instead of
-            // leaving the control showing an unsaved state as if it succeeded.
-            // Handled here (not rethrown) — nothing downstream awaits this
-            // promise's rejection; callers fire it with `void`.
-            const reverted = confirmedGradingRef.current;
-            latestGradingRef.current = reverted;
-            setGrading(reverted);
-            setRuntimeStatus({ state: "unavailable", message: "Save failed — reverted" });
-          },
+          () => undefined,
+          () => applySettled(false),
         ),
       );
     },
@@ -358,7 +404,7 @@ export function useColorGradingController({
     const attemptedGrading = pendingPersistGradingRef.current ?? latestGradingRef.current;
     pendingPersistValueRef.current = undefined;
     pendingPersistGradingRef.current = null;
-    return persistColorGradingValue(value, attemptedGrading);
+    return persistColorGradingValue(value, attemptedGrading, identityKeyRef.current);
   }, [persistColorGradingValue]);
 
   useEffect(() => addStudioPendingEditFlushListener(flushPendingPersist), [flushPendingPersist]);
@@ -444,13 +490,18 @@ export function useColorGradingController({
         ? serializeHfColorGrading(nextGrading)
         : null;
       pendingPersistGradingRef.current = nextGrading;
+      // Captured now (edit time), not read fresh inside the timer — the
+      // timer fires 350ms later and may run after selection has already
+      // moved on, at which point identityKeyRef.current would no longer
+      // describe the element this edit was actually made for.
+      const attemptIdentityKey = identityKeyRef.current;
       persistTimerRef.current = setTimeout(() => {
         const value = pendingPersistValueRef.current;
         const attemptedGrading = pendingPersistGradingRef.current ?? nextGrading;
         pendingPersistValueRef.current = undefined;
         pendingPersistGradingRef.current = null;
         persistTimerRef.current = null;
-        void persistColorGradingValue(value ?? null, attemptedGrading);
+        void persistColorGradingValue(value ?? null, attemptedGrading, attemptIdentityKey);
       }, 350);
     },
     [persistColorGradingValue, postColorGrading, postCompare, scheduleRuntimeStatusRefresh],

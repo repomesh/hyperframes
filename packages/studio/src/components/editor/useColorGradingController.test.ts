@@ -129,7 +129,37 @@ describe("useColorGradingController", () => {
     vi.useRealTimers();
   });
 
-  it("reverts to the last confirmed-good grading when a persist rejects", async () => {
+  it("reverts to the last confirmed-good grading via the real onSettled(false) signal (matches runDomEditCommit, which never rejects)", async () => {
+    // The actual Studio commit runner (runDomEditCommit) catches persist
+    // failures internally and always resolves — it reports outcome only
+    // through the onSettled callback passed as the 3rd argument. A mock
+    // that only rejects would validate a path the real callback never takes.
+    vi.useFakeTimers();
+    const onSetAttributeLive = vi.fn(
+      (_attr: string, _value: string | null, onSettled?: (ok: boolean) => void) => {
+        onSettled?.(false);
+        return Promise.resolve();
+      },
+    );
+    const { root, getState } = renderHook(onSetAttributeLive);
+    act(() => {
+      getState().commitColorGrading(freshPopGrading());
+    });
+    expect(getState().grading.preset).toBe("fresh-pop");
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getState().grading.preset).toBe("neutral");
+    expect(getState().runtimeStatus.state).toBe("unavailable");
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
+
+  it("reverts to the last confirmed-good grading when a persist rejects (fallback for a non-onSettled implementation)", async () => {
     vi.useFakeTimers();
     const onSetAttributeLive = vi.fn().mockRejectedValue(new Error("disk full"));
     const { root, getState } = renderHook(onSetAttributeLive);
@@ -149,6 +179,54 @@ describe("useColorGradingController", () => {
     // commit) instead of permanently showing "fresh-pop" as if it had saved.
     expect(getState().grading.preset).toBe("neutral");
     expect(getState().runtimeStatus.state).toBe("unavailable");
+    act(() => root.unmount());
+    vi.useRealTimers();
+  });
+
+  it("a stale in-flight persist result does not touch state after selection has moved on to a THIRD element", async () => {
+    vi.useFakeTimers();
+    let resolveA: (() => void) | undefined;
+    let capturedOnSettledA: ((ok: boolean) => void) | undefined;
+    const onSetAttributeLive = vi.fn(
+      (_attr: string, _value: string | null, onSettled?: (ok: boolean) => void) => {
+        capturedOnSettledA = onSettled;
+        return new Promise<void>((resolve) => {
+          resolveA = resolve;
+        });
+      },
+    );
+    const { root, getState, rerenderWithElement } = renderHook(
+      onSetAttributeLive,
+      makeElement({ id: "s1-bg" }),
+    );
+    act(() => {
+      getState().commitColorGrading(freshPopGrading());
+    });
+    // Let the debounce fire while still on s1-bg — the persist call is now
+    // genuinely in flight (its promise won't settle until resolveA() below).
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(onSetAttributeLive).toHaveBeenCalledTimes(1);
+
+    // Selection moves twice more while s1-bg's persist is still pending.
+    rerenderWithElement(makeElement({ id: "s2-bg" }));
+    rerenderWithElement(makeElement({ id: "s3-bg" }));
+    expect(getState().grading.preset).toBe("neutral"); // s3-bg's own fresh state
+
+    // NOW the stale s1-bg persist finally settles as a failure.
+    act(() => {
+      capturedOnSettledA?.(false);
+      resolveA?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // s3-bg's state must be untouched by a result that belongs to s1-bg.
+    expect(getState().grading.preset).toBe("neutral");
+    expect(getState().runtimeStatus.state).not.toBe("unavailable");
     act(() => root.unmount());
     vi.useRealTimers();
   });

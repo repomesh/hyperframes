@@ -25,6 +25,7 @@ interface DataAttributeCommitOptions {
   coalescePrefix: string;
   skipRefresh: boolean;
   refreshAfter?: boolean;
+  onSettled?: (ok: boolean) => void;
 }
 
 function resolveFullAttrName(attr: string, prefixData: boolean | undefined): string {
@@ -128,6 +129,7 @@ export function useDomEditAttributeCommits({
         onError: (error) => reportDomEditPersistFailure(domEditSelection, [op], error, showToast),
         shouldResync: () => isLatestCommit() && !!options.refreshAfter,
         resync: () => refreshDomEditSelectionFromPreview(domEditSelection),
+        onSettled: options.onSettled,
       });
     },
     [
@@ -153,11 +155,12 @@ export function useDomEditAttributeCommits({
   );
 
   const handleDomAttributeLiveCommit = useCallback(
-    async (attr: string, value: string | null) => {
+    async (attr: string, value: string | null, onSettled?: (ok: boolean) => void) => {
       await commitDataAttribute(attr, value, {
         label: `Edit ${attr.replace(/^(data-)?/, "").replace(/-/g, " ")}`,
         coalescePrefix: "attr-live",
         skipRefresh: true,
+        onSettled,
       });
     },
     [commitDataAttribute],
