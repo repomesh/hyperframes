@@ -289,6 +289,7 @@ function createDrainFrameGuard(args: {
         } catch (err) {
           throw new DrawElementVerificationError(
             `blank drawElement frame ${idx}: ${buf.length}B < floor ${Math.round(floor)}B and recapture failed (${err instanceof Error ? err.message : String(err)})`,
+            { kind: "blank", frameIndex: idx },
           );
         }
         if (retryBuf.equals(buf)) {
@@ -306,6 +307,7 @@ function createDrainFrameGuard(args: {
         } else if (retryBuf.length < floor) {
           throw new DrawElementVerificationError(
             `blank drawElement frame ${idx}: ${buf.length}B (retry ${retryBuf.length}B) < floor ${Math.round(floor)}B`,
+            { kind: "blank", frameIndex: idx },
           );
         } else {
           buf = retryBuf;
@@ -339,6 +341,7 @@ function createDrainFrameGuard(args: {
         }
         throw new DrawElementVerificationError(
           `drawElement self-verify failed at frame ${idx}: ${db.toFixed(1)}dB < ${verifyMinDb}dB vs pre-injection screenshot${dumpDir ? ` (pair: ${dumpDir})` : ""}`,
+          { kind: "psnr", frameIndex: idx, failedDb: db, verifyThresholdDb: verifyMinDb },
         );
       }
       stats.verifyChecked += 1;

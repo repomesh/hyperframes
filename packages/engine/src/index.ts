@@ -91,6 +91,8 @@ export {
   captureFramesBatchPipelined,
   DrawElementVerificationError,
   isDrawElementVerificationError,
+  getDrawElementVerificationDetails,
+  type DrawElementVerificationDetails,
   recaptureDrawElementFrameForVerify,
   completeDeferredDrawElementInit,
   writeCapturedFrame,

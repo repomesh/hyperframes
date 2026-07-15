@@ -60,6 +60,12 @@ export interface RenderCaptureObservability {
    * telemetry from one that never attempted any fallback.
    */
   deFallbackReason?: string;
+  /** The failing PSNR (dB) when `deFallbackReason === "psnr"`; undefined for blank/oom/capture_error (no score exists). */
+  deFallbackFailedDb?: number;
+  /** Frame index the verification failure was detected at; set for both "psnr" and "blank" fallback reasons. */
+  deFallbackFrameIndex?: number;
+  /** The HF_DE_VERIFY_MIN_DB threshold the failing dB breached; only set alongside deFallbackFailedDb (psnr reason). */
+  deFallbackThresholdDb?: number;
   /** Auto-parallel inversion outcome: "inverted" (fired, held) | "reverted" (fired, self-verify retry rolled back). */
   deWorkerInversion?: "inverted" | "reverted";
   /** Worker count the resolver would have used absent the inversion; undefined if it never fired. */
