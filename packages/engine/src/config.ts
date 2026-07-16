@@ -151,6 +151,15 @@ export interface EngineConfig {
   chunkSizeFrames: number;
   enableStreamingEncode: boolean;
   /**
+   * INTERNAL. Set by `resolveConfig` when the Windows software-GPU compound
+   * heuristic (`shouldAutoDisableStreamingEncodeOnWin32Compound`) turned
+   * `enableStreamingEncode` off on the caller's behalf. Not intended to be
+   * set by callers; surfaces the auto-decision for downstream observability
+   * (log lines, telemetry) so operators can tell an auto-disable apart from
+   * an explicit user opt-out.
+   */
+  streamingEncodeAutoDisabledOnWin32Compound?: boolean;
+  /**
    * Max composition duration eligible for streaming encode (seconds).
    * Mirrors GSAP rendering's 4-minute streaming guard: production has seen
    * ffmpeg's streaming pipe hit FFMPEG_STREAMING_TIMEOUT_MS on longer videos.
@@ -353,6 +362,62 @@ export function scaleProtocolTimeoutForComposition(
   // lowered (preserves the "only ever raise" contract for all callers).
   const ceiling = Math.max(baseTimeoutMs, MAX_SCALED_PROTOCOL_TIMEOUT_MS);
   return Math.min(ceiling, Math.max(baseTimeoutMs, scaled));
+}
+
+/**
+ * Auto-disable `enableStreamingEncode` on Windows software-GPU compound.
+ *
+ * Field signal (`ts=1784131903`, win32/x64, CLI 0.7.58, 156s UI-heavy
+ * composition): the render was stable ONLY with FOUR flags together —
+ * `--workers 1 --no-browser-gpu --low-memory-mode` + explicit
+ * `PRODUCER_ENABLE_STREAMING_ENCODE=false`. Every recent Windows-related
+ * fix (#2359, #2245, #2298, #2331) already shipped in 0.7.58; the residual
+ * failure is screenshot streaming-encode via CDP `Page.captureScreenshot`
+ * on Windows even after software fallback. Since `--low-memory-mode` and
+ * `--no-browser-gpu` already imply screenshot capture, three of the four
+ * flags are structurally coupled — auto-detect the compound and disable
+ * streaming-encode automatically so callers don't have to memorize the
+ * four-flag combination.
+ *
+ * Conservative gates (all must hold):
+ *   1. `platform === "win32"` — the failure is Windows-specific to CDP's
+ *      screenshot streaming path.
+ *   2. `softwareGpuForced` — the render is already on the SwiftShader /
+ *      forced-screenshot path (from `--no-browser-gpu`, `disableGpu`, or
+ *      `--low-memory-mode` implying screenshot capture).
+ *   3. `workers === 1` — the field signal reproduces on single-worker
+ *      captures; parallel workers have a different failure surface
+ *      (missing media frames) already handled by the worker-count route.
+ *   4. Composition duration >120s WHEN KNOWN. When unknown at the config
+ *      layer (composition duration is parsed downstream), the guard
+ *      reduces to the three-condition compound. Trade-off documented in
+ *      the PR body: false positives possible for short (~<120s) Windows
+ *      software-GPU single-worker renders. Mitigation: the explicit
+ *      opt-in escape hatch (`PRODUCER_ENABLE_STREAMING_ENCODE=true` or
+ *      `overrides.enableStreamingEncode !== undefined`) always wins.
+ *
+ * Pure function; exported for tests.
+ */
+export function shouldAutoDisableStreamingEncodeOnWin32Compound(opts: {
+  platform: NodeJS.Platform;
+  softwareGpuForced: boolean;
+  workers: number;
+  compositionDurationSec: number | undefined;
+  userExplicitlySet: boolean;
+}): boolean {
+  if (opts.userExplicitlySet) return false;
+  if (opts.platform !== "win32") return false;
+  if (!opts.softwareGpuForced) return false;
+  // Strict equality: NaN (concurrency: "auto") and fractional / zero worker
+  // counts do NOT match. The field-signal compound is `--workers 1`.
+  if (opts.workers !== 1) return false;
+  // Duration boundary: when known, only auto-disable if >120s (avoid
+  // over-triggering on short renders). When unknown, skip this check —
+  // the three conditions above are already conservative on their own.
+  if (opts.compositionDurationSec !== undefined && opts.compositionDurationSec <= 120) {
+    return false;
+  }
+  return true;
 }
 
 function memoryAdaptiveCacheLimit(): number {
@@ -606,6 +671,52 @@ export function resolveConfig(overrides?: Partial<EngineConfig>): EngineConfig {
     !explicitForceScreenshotOptOut
   ) {
     merged.forceScreenshot = true;
+  }
+
+  // Windows software-GPU compound auto-disable for streaming-encode.
+  //
+  // Field signal ts=1784131903 (win32/x64, CLI 0.7.58, 156s UI-heavy):
+  // stable ONLY with FOUR flags — `--workers 1 --no-browser-gpu
+  // --low-memory-mode` + `PRODUCER_ENABLE_STREAMING_ENCODE=false`. Since
+  // `--no-browser-gpu` and `--low-memory-mode` already imply screenshot
+  // capture, three of the four flags are structurally coupled: auto-detect
+  // the compound and disable streaming-encode on the caller's behalf.
+  //
+  // Explicit user intent wins: if `PRODUCER_ENABLE_STREAMING_ENCODE` env
+  // is set to any value OR the caller passed `overrides.enableStreamingEncode`,
+  // this clamp is a no-op (the user's explicit choice — including
+  // `PRODUCER_ENABLE_STREAMING_ENCODE=true` — is preserved).
+  //
+  // Composition duration is not known at the config-resolution layer
+  // (the composition is parsed downstream of `resolveConfig`), so this
+  // wire-up passes `compositionDurationSec: undefined` and the helper
+  // reduces to the three-condition compound. Trade-off documented in the
+  // helper's JSDoc and the PR body: false positives possible for short
+  // Windows software-GPU single-worker renders; the explicit opt-in
+  // escape hatch is the mitigation.
+  const streamingEncodeUserExplicitlySet =
+    env("PRODUCER_ENABLE_STREAMING_ENCODE") !== undefined ||
+    overrides?.enableStreamingEncode !== undefined;
+  const softwareGpuForced =
+    merged.browserGpuMode === "software" || merged.disableGpu || merged.lowMemoryMode;
+  const resolvedWorkers = typeof merged.concurrency === "number" ? merged.concurrency : NaN;
+  if (
+    merged.enableStreamingEncode &&
+    shouldAutoDisableStreamingEncodeOnWin32Compound({
+      platform: process.platform,
+      softwareGpuForced,
+      workers: resolvedWorkers,
+      compositionDurationSec: undefined,
+      userExplicitlySet: streamingEncodeUserExplicitlySet,
+    })
+  ) {
+    merged.enableStreamingEncode = false;
+    merged.streamingEncodeAutoDisabledOnWin32Compound = true;
+    console.error(
+      "[hyperframes] Windows compound-workaround auto-detected — disabling streaming-encode " +
+        "(platform=win32, software-GPU forced, workers=1). Field signal ts=1784131903. " +
+        "Override: PRODUCER_ENABLE_STREAMING_ENCODE=true.",
+    );
   }
 
   // drawElement capture and page-side shader compositing are mutually
